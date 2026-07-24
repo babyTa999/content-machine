@@ -32,6 +32,20 @@ when_to_use: run_oracle 出 vault/YYYY-MM-DD.md 后；关键词判不了的"关�
 - **"发布时间新" 不加分**；**"来自 arXiv" 不给可信度、不给内容价值**。未验证的新论文当选题反而有风险。
 - **①难题 优先从 X / Reddit 找**（不是 arXiv）：① 人们正在**抱怨/求助/争论**的真实问题 ② **有冲突证据、没标准答案**的 ③ AI 给 **plausible but wrong** 的现场 ④ 普通读者秒懂 stakes 的 ⑤ 能让 Apodex 做**公开测试/case/验证实验**的。要"难但能讲清楚"，不是"术语多、论文新"。
 
+## ① 预测切面（domain forecasting —— SSPP 范式，① 的另一大类）
+
+⚠️ **① 难题 = 领域难题，不是"AI 又错哪了"**（AI 幻觉/失败那类归 ②）。① 的一大来源 = 研究所/deeptech 的人真会问的**预测型难题**，按老板 7 类铺（市场竞争情报 / 政策监管 / pharma clinical / 技术趋势产品路线 / 供应链地缘 / 战略情景 / 投资概率），**生物加重**。三模板，每题挂一个 AFP 落地页能力：
+
+- **A 实验结果预测** ↔ `Clinical Trial Signal Discovery` / `Metabolic Intervention Optimizer`：给定**公开**设计+baseline+intervention，预测未揭晓结果——point estimate + 80% 区间 + 最可能翻车的变量。
+- **B 转化与复现预测** ↔ `Translational Prediction` / `Causal Target Validation` / `Therapeutic Delivery Design`：基于**已发表** preclinical，mechanism 在 human 出 efficacy signal 的概率 + 最可能的 translational failure 环节（target / delivery / exposure / toxicity / stratification）+ 独立 cohort replication 概率。
+- **C 资源配置预测** ↔ `Investment Decision Intelligence`：**公开在研管线**里哪些最可能出可复现 signal / 哪个 endpoint 信息增益最大。
+- SSPP 出题法：给概率 / 区间 / 失败变量，**不给结论**。（SSPP 实锤可 verbatim：研究者高估 effect 0.18 vs 实际 0.10；越自信越不准；实验平均 power 仅 0.44）
+
+🔒 **硬规则：一个 prompt + 公开证据就能跑。** Apodex 是对话出报告、**不吃用户私有数据/文件**（见产品形态）。所以 ① 预测题只能是：预测**公开**事件 / 公开在研的结果、裁决**公开**证据争议、综合**已发表**文献。
+- ❌ 砍：任何要用户自己的实验数据 / 私有 preclinical / 内部管线才能答的题——Apodex 跑不了，研究者也没法"刷到就试"。
+- ✅ 合格：研究者能**直接把这题粘进 Apodex 就出价值** = 顺手是产品 demo（对标落地页 TRY A QUESTION）。
+- 范例：GLP-1 长期 CV/肾脏获益证据到什么程度？SGLT2+GLP-1 联用证据够不够？实体瘤 CAR-T 未来 18 月能否过关键终点、卡哪？orforglipron 到 2027 抢多少注射剂份额？某公开在研药 Phase 3 命中概率 / PDUFA 结果？
+
 ## ✍️ 内容切口纪律（判官只给假设，不替证据下结论）
 
 **你手上只有标题 + 摘要片段（不是全文、也不能调工具去查）——信息本就有限。**
