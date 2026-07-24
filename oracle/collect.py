@@ -218,24 +218,20 @@ def _jina_read(url, max_chars=5000):
         return r.read().decode()[:max_chars]
 
 def collect_metaculus():
-    """Metaculus 预测题库——C1 预测切面供给。公开 REST API，免费无 auth。
-    只取 open 预测题，无时间窗口限制——题开着就是选题种子。"""
+    """Metaculus 预测题库——C1 预测切面供给。
+    REST API 已 403（2026-07），改 Jina Reader 抓搜索页（#### [title](url) 格式）。"""
+    url = ("https://www.metaculus.com/questions/"
+           "?order_by=-activity&status=open"
+           "&search=AI+science+drug+protein+climate+biology")
     out = []
     try:
-        url = ("https://www.metaculus.com/api2/questions/"
-               "?limit=20&order_by=-activity&status=open&type=forecast"
-               "&search=AI+science+biology+drug+protein+climate")
-        d = _get(url, timeout=25)
-        for q in d.get("results", []):
-            title = q.get("title", "")
-            qid = q.get("id")
-            if not title or not qid:
-                continue
+        text = _jina_read(url, max_chars=8000)
+        for m in re.finditer(r'####\s*\[([^\]]{15,})\]\((https://www\.metaculus\.com/questions/\d+/[^\)#]+)\)', text):
+            title, link = m.group(1).strip(), m.group(2).strip()
             out.append({
                 "source": "prediction_banks", "pillar_hint": "C1",
-                "url": f"https://www.metaculus.com/questions/{qid}/",
-                "text": title, "lang": "en",
-                "age_h": 0, "eng": q.get("number_of_predictions", 0),
+                "url": link, "text": title, "lang": "en",
+                "age_h": 0, "eng": 0,
             })
     except Exception as e:
         print(f"  [metaculus] ERR {e}")
@@ -245,7 +241,7 @@ def collect_official_challenges():
     """官方悬赏/RFP——NIH/XPRIZE/ARPA-H。Jina Reader 抓已知页面提取链接。
     无时间窗口——悬赏没关就有效。"""
     pages = [
-        ("NIH", "https://commonfund.nih.gov/challenges"),
+        ("USAgov", "https://www.usa.gov/find-active-challenge"),
         ("XPRIZE", "https://www.xprize.org/prizes"),
         ("ARPA-H", "https://arpa-h.gov/research-and-funding"),
     ]
@@ -255,6 +251,14 @@ def collect_official_challenges():
             text = _jina_read(url)
             for m in re.finditer(r'\[([^\]]{15,})\]\((https?://[^\)]+)\)', text):
                 title, link = m.group(1).strip(), m.group(2).strip()
+                if link.endswith(('.svg', '.png', '.jpg')):
+                    continue
+                if 'usa.gov' in link and not re.search(r'/challenges/[a-z]', link):
+                    continue
+                if 'xprize.org' in link and not re.search(r'/competitions/[a-z]', link):
+                    continue
+                if 'arpa-h.gov' in link and '/programs/' not in link and '/open-funding' not in link:
+                    continue
                 out.append({
                     "source": "official_challenges", "pillar_hint": "C1",
                     "url": link, "text": f"[{name}] {title}", "lang": "en",
@@ -265,40 +269,6 @@ def collect_official_challenges():
         time.sleep(1)
     return out
 
-def collect_review_open_questions(now):
-    """综述的 open questions / limitations / future work——arXiv 搜 review 类论文。
-    窗口 30 天——综述出得少但价值密度最高。"""
-    import xml.etree.ElementTree as ET
-    NS = {"a": "http://www.w3.org/2005/Atom"}
-    queries = {
-        "ai-review": '(cat:cs.AI OR cat:cs.LG OR cat:cs.CL) AND (abs:"open question" OR abs:"open problem" OR abs:"unsolved" OR abs:"remaining challenge") AND (abs:review OR abs:survey)',
-        "bio-review": '(cat:q-bio OR cat:physics.bio-ph OR cat:cs.CE) AND (abs:"open question" OR abs:"unsolved" OR abs:"remaining challenge") AND (abs:review OR abs:survey)',
-    }
-    out = []
-    for label, q in queries.items():
-        try:
-            url = ("http://export.arxiv.org/api/query?search_query=" +
-                   urllib.parse.quote(q) +
-                   "&sortBy=submittedDate&sortOrder=descending&max_results=10")
-            req = urllib.request.Request(url, headers={"User-Agent": "content-machine/1.0"})
-            with urllib.request.urlopen(req, timeout=25) as r:
-                root = ET.fromstring(r.read().decode())
-        except Exception as e:
-            print(f"  [review:{label}] ERR {e}"); time.sleep(2); continue
-        for entry in root.findall("a:entry", NS):
-            title = (entry.findtext("a:title", "", NS) or "").strip().replace("\n", " ")
-            aid = (entry.findtext("a:id", "", NS) or "").strip()
-            pub = (entry.findtext("a:published", "", NS) or "").strip()
-            age = iso_age_h(pub.replace("Z", "+00:00"), now) if pub else None
-            if age is not None and age > 720:
-                continue
-            out.append({
-                "source": "review_open_questions", "pillar_hint": "C1",
-                "url": aid, "text": title, "lang": "en",
-                "age_h": round(age, 1) if age else 0, "eng": 0,
-            })
-        time.sleep(3)
-    return out
 
 def main():
     ap = argparse.ArgumentParser()
@@ -316,10 +286,9 @@ def main():
     cands += collect_hf()
     cands += collect_arxiv(now)
     cands += collect_rss(now)
-    print("collect: C1 专属源 (Metaculus + 官方悬赏 + 综述 open Qs) ...")
+    print("collect: C1 专属源 (Metaculus + 官方悬赏) ...")
     cands += collect_metaculus()
     cands += collect_official_challenges()
-    cands += collect_review_open_questions(now)
     if not args.no_reddit:
         print("collect: Reddit via safe-social (u/Top_Shop_6167 read-only) ...")
         cands += collect_reddit(now)

@@ -16,25 +16,23 @@ practitioner_pain_reddit:            # 从业者直接问痛（已 agent-reach �
     AskEngineers(通用工程非ICP)、biotech(薪资)、PhD(读博生活)、LocalLLaMA(蒸馏政治)、MaterialsScience(弱)。
 
 official_challenges:                 # 官方悬赏的硬问题 = ICP 的痛，明写
-  method: Jina Reader 抓已知页面（免费）
+  method: Jina Reader 抓页面 + 路径过滤（免费）
   status: auto
-  sources: [NIH Challenges (commonfund), XPRIZE, ARPA-H research-and-funding]
-  note: Jina Reader 提取页面 markdown 中的链接标题；NSF/DARPA 后续按需加页面
+  sources: [USA.gov find-active-challenge（替 NIH commonfund，后者出导航碎片）, XPRIZE competitions, ARPA-H programs/open-funding]
+  note: >
+    Jina 提取页面链接 + 路径过滤(usa.gov 只留 /challenges/、xprize 只留 /competitions/、
+    arpa-h 只留 /programs/或/open-funding；跳过 .svg/.png/.jpg)；NSF/DARPA 后续按需加。
 
 prediction_banks:                    # 预测切面现成题库（含 7+5 类）
-  method: Metaculus 公开 REST API（免费无 auth）
+  method: Metaculus REST API 已 403(2026-07)→改 Jina Reader 抓搜索页(#### [title](url) 正则)
   status: auto
   sources:
-    - Metaculus open questions（AI/science/biology/drug/protein/climate）—— 已接入 collect.py
+    - Metaculus open questions（AI/science/drug/protein/climate/biology）—— 已接入 collect.py（Jina 版）
     - SSPP (socialscienceprediction.org) —— DellaVigna 100 项目 1,482 题，有 ground truth（待 Jina 接）
     - FDA PDUFA 日历、临床 readout 日历、财报日历（待接）
 
-review_open_questions:               # 综述的 open questions / limitations / future work
-  method: arXiv API 搜 review/survey 类论文（免费）
-  status: auto
-  window: 30 天——综述出得少但价值密度最高
-  queries: [ai-review (cs.AI/LG/CL + open question/unsolved), bio-review (q-bio + open question/unsolved)]
-  note: 每篇综述结尾的"还没解决的"——比方法论文值钱
+# ⛔ review_open_questions（综述 open questions，arXiv review/survey）—— 已砍(2026-07-24)
+#    实采后判官全砍：搜 "open question + review" 出的是自秀方法论文，非 problem-first。不值得占采集。
 
 # ========== ② 验证拆解：AI 幻觉真实闯祸 ==========
 
@@ -64,7 +62,7 @@ x_keyword_search:                    # 捞非 watchlist 的共鸣/痛点帖（Se
   #   B) monid /apidojo/tweet-scraper —— $0.0006/条(可忽略)；稳、不碰我们的号、支持高级过滤(min eng/exclude RT/date)
   # 实测：A 出 StructureGuard 共鸣+Ricardo 爆帖；B 需 AI-anchored query + sort=Top(否则 generic 命中噪音)
   method: safe-social x search（A，Selene 2026-07-24 定用免费的）
-  status: auto —— ⚠️注意：拉开间隔别连甩(会限流)、别用 macOS 没有的 timeout。monid(B) 留作上量/不碰号时的备选。
+  status: staged —— ⚠️collect.py 尚未实现关键词搜！engagement 目前只跑 watchlist；待接 collect_x_search。拉开间隔别连甩(限流)、别用 macOS 没有的 timeout。monid(B) 留作上量/不碰号时备选。
   queries:
     共鸣_同哲学: ["verification matters", "cannot trust AI output", "reproducibility crisis", "AI confidently wrong", "evidence over answers"]
     痛点_我们能解: ["AI hallucinated a citation", "how do I verify AI", "AI made up a number", "model confidently wrong", "spent hours verifying AI"]
