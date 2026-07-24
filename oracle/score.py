@@ -56,7 +56,9 @@ def soft_score(c):
     age = c.get("age_h", 0) or 0
     if age <= 24: s += 2
     elif age <= 72: s += 1
-    if c.get("source", "").startswith(("arxiv", "rss", "hf")): s += 1  # post 素材源略提
+    if c.get("source", "").startswith("rss"): s += 1  # 只给 RSS(Retraction Watch 事件源)微加分
+    # ⚠️ arXiv/HF 论文源不自动加分（Selene 2026-07-24："发布新/来自 arXiv 不加价值"）——
+    #    官号不做论文转发器；arXiv 只有判官认出它亮了普通人能懂的 PROBLEM 才留。
     # 2026-07-24 (B) problem-first 结构信号：从业者求助帖是 problem-first 富矿。
     # 真痛点是大白话、命中不了学术关键词库(col=?)、会沉到判官读不到的位置——
     # 不靠领域词、靠"求助结构"识别并 +4 置顶。只认 [Q]/[R]（[D] 多是会议八卦，不加）。
