@@ -6,10 +6,12 @@
 # ========== ① 难题求解：ICP 真实硬难题 ==========
 
 practitioner_pain_reddit:            # 从业者直接问痛（safe-social 只读）
-  method: safe-social reddit
+  method: safe-social reddit search  # ⚠️safe-social 封了 sub 命令→改 search "subreddit:X <痛点词>"
   status: auto
-  window_h: 168                      # 痛点帖常青、非新闻，7 天
-  limit_per_sub: 15
+  sort: top                          # 拉高赞经典，不看"最近谁发帖"的运气
+  time: year                         # 痛点常青，取一年内高赞真金
+  limit_per_query: 12
+  pain_query: '(help OR error OR problem OR "how do I" OR verify OR reproducibility OR broken OR wrong)'
   subs:                              # 分 ICP 组——采集给帖子带 icp（比关键词准）
     Apodex4Science: [bioinformatics, computationalbiology, chemistry, statistics]
     Apodex4DeepTech: [MLQuestions, datascience, MachineLearning]

@@ -217,8 +217,13 @@ def collect_hf(cfg):
     return out
 
 def collect_reddit(now, cfg):
-    """Reddit via safe-social（只读）——从业者问痛(①)。subs 分 ICP 组，帖子带 icp_hint（比关键词准）。"""
-    window, lim = cfg.get("window_h", 168), cfg.get("limit_per_sub", 15)
+    """从业者问痛(①)。safe-social 封了 `sub` 命令 → 改 `search "subreddit:<版> <痛点词>"`
+    拉 top(高赞经典)——痛点常青，捞版里被认可的真金，不看"最近谁发帖"的运气。
+    subs 分 ICP 组→帖子带 icp_hint。"""
+    sort = cfg.get("sort", "top")
+    twin = cfg.get("time", "year")
+    lim = cfg.get("limit_per_query", 12)
+    pain = cfg.get("pain_query", "")
     subs_cfg = cfg.get("subs", {})
     pairs = []
     if isinstance(subs_cfg, dict):                 # 分组 {ICP: [subs]}
@@ -226,10 +231,12 @@ def collect_reddit(now, cfg):
             for s in (subs or []): pairs.append((s, icp))
     else:                                          # 平铺 [subs]
         for s in (subs_cfg or []): pairs.append((s, None))
-    out = []
+    out, seen = [], set()
     for sub, icp in pairs:
+        q = f"subreddit:{sub} {pain}".strip()
         try:
-            r = subprocess.run([SAFE_SOCIAL, "reddit", "sub", sub, "--limit", str(lim), "--json"],
+            r = subprocess.run([SAFE_SOCIAL, "reddit", "search", q,
+                                "--sort", sort, "--time", twin, "--limit", str(lim), "--json"],
                                capture_output=True, text=True, timeout=90)
             children = (((json.loads(r.stdout) or {}).get("data") or {}).get("data") or {}).get("children") or []
         except Exception as e:
@@ -237,18 +244,20 @@ def collect_reddit(now, cfg):
         for ch in children:
             p = ch.get("data") or {}
             if p.get("stickied"): continue
+            pid = p.get("id")
+            if pid and pid in seen: continue
+            if pid: seen.add(pid)
             created = p.get("created_utc")
             age = (now.timestamp() - float(created)) / 3600 if created else None
-            if age is not None and age > window: continue
             title, body = p.get("title", ""), (p.get("selftext") or "")[:300]
             out.append({
                 "source": "reddit", "pillar_hint": None, "sub": sub, "icp_hint": icp,
                 "url": "https://reddit.com" + (p.get("permalink") or ""),
                 "text": (title + " " + body).strip()[:500], "lang": "en",
-                "age_h": round(age, 1) if age is not None else 0,
+                "age_h": round(age, 1) if age is not None else 0,      # 不再按窗口砍——top 高赞常青
                 "eng": p.get("score", 0) + p.get("num_comments", 0),
             })
-        time.sleep(1.2)
+        time.sleep(1.5)  # 拉开间隔防限流
     return out
 
 def collect_metaculus(cfg):
