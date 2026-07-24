@@ -40,6 +40,25 @@ official_challenges:                 # 官方悬赏 = ICP 的痛，明写
     ARPA-H: https://arpa-h.gov/research-and-funding
   note: 路径过滤(usa.gov /challenges/·xprize /competitions/·arpa-h /programs|open-funding；跳图片)硬编码在 collect；NSF/DARPA 后续加页面。
 
+domain_news:                         # ① 领域源——喂 pharma/临床/政策/市场/技术 的公开发展 → 判官按 A/B/C 框成预测题
+  method: google_news_rss
+  status: auto
+  per_query: 6
+  # ⚠️ 老板 7 类(市场竞争/政策监管/pharma clinical/技术趋势/供应链地缘/战略情景/投资概率)，生物加重
+  # 判官把'发生了啥'框成'围绕它的开放预测题'(A/B/C)，一个 prompt+公开证据可跑；不吃私有数据
+  queries:
+    - GLP-1 cardiovascular renal outcomes trial
+    - SGLT2 GLP-1 combination clinical evidence
+    - solid tumor CAR-T phase 3 endpoint
+    - anti-amyloid lecanemab donanemab ARIA benefit
+    - AlphaFold protein design limitation dynamics
+    - base editing CRISPR therapy approval
+    - FDA accelerated approval reform confirmatory
+    - BIOSECURE CDMO biomanufacturing supply
+    - orforglipron oral obesity drug market
+    - PDUFA decision drug approval
+  note: 领域词非 AI 词——① 是领域预测题不是"AI 又错哪了"。SSPP/PDUFA/临床 readout 日历后续可加。
+
 # ⛔ review_open_questions 已砍(2026-07-24)：搜 open-question+review 出的是自秀方法论文，非 problem-first。
 
 # ========== ② 验证拆解：AI 在 science/deeptech 闯祸的真实事件 ==========

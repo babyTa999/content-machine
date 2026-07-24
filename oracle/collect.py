@@ -296,17 +296,15 @@ def collect_official_challenges(cfg):
         time.sleep(1)
     return out
 
-def collect_ai_incidents(cfg):
-    """② 事件源——Google News RSS（ICP 镜头 science/deeptech）。存 title + description。
-    ⚠️ 只锚科研/deeptech 的 AI 闯祸；判官 ICP 闸砍客服/消费噪音。"""
-    queries, per = cfg.get("queries", []) or [], cfg.get("per_query", 8)
+def _google_news(queries, per, source_tag):
+    """Google News RSS（免费无 key）通用采集——存 title + description 片段。"""
     out, seen = [], set()
     for q in queries:
         try:
             url = "https://news.google.com/rss/search?q=" + urllib.parse.quote(q) + "&hl=en-US&gl=US&ceid=US:en"
             root = _fetch_xml(url)
         except Exception as e:
-            print(f"  [ai_incident:{q[:22]}] ERR {e}"); time.sleep(1.5); continue
+            print(f"  [{source_tag}:{q[:22]}] ERR {e}"); time.sleep(1.5); continue
         items = [el for el in root.iter() if _LNAME(el) == "item"]
         for it in items[:per]:
             title, link, desc = "", "", ""
@@ -319,10 +317,20 @@ def collect_ai_incidents(cfg):
             seen.add(title)
             text = title if not desc else f"{title} — {desc}"
             out.append({
-                "source": "ai_incident", "pillar_hint": None,
+                "source": source_tag, "pillar_hint": None,
                 "url": link, "text": text[:500], "lang": "en", "age_h": 0, "eng": 0,
             })
         time.sleep(1.5)  # 礼貌间隔
+    return out
+
+def collect_ai_incidents(cfg):
+    """② 事件源——AI 在 science/deeptech 闯祸(ICP 镜头)。判官 ICP 闸砍客服/消费噪音。"""
+    return _google_news(cfg.get("queries", []) or [], cfg.get("per_query", 8), "ai_incident")
+
+def collect_domain_news(cfg):
+    """① 领域源——研究所/deeptech 的领域发展(pharma/临床/政策/市场/技术),判官按 A/B/C 框成预测题。
+    ⚠️ 新闻是'发生了啥'(过去式)，判官把它框成'围绕它的开放预测题'(A/B/C)——是 agent 判断不是纯筛。"""
+    return _google_news(cfg.get("queries", []) or [], cfg.get("per_query", 6), "domain")
     return out
 
 def main():
@@ -351,6 +359,9 @@ def main():
     if on("ai_incident_db"):
         print("collect: ② AI 闯祸事件 (Google News, ICP 镜头) ...")
         cands += collect_ai_incidents(cfg("ai_incident_db"))
+    if on("domain_news"):
+        print("collect: ① 领域发展 (Google News, 老板7类, 判官框预测题) ...")
+        cands += collect_domain_news(cfg("domain_news"))
     if on("practitioner_pain_reddit") and not args.no_reddit:
         print("collect: Reddit (safe-social 只读) ...")
         cands += collect_reddit(now, cfg("practitioner_pain_reddit"))

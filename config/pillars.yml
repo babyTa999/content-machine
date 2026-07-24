@@ -8,20 +8,18 @@ columns:
     name: 难题求解 (Hard-problem solving·主池)
     scrapable: true
     target_signal: [心智, 收藏, 曝光]
+    # 2026-07-24 去 AI 化：删 deep research/ai scientist/self-improving 等 AI 词，换领域+预测词
+    #   ① = 领域预测题(pharma/临床/政策/市场/技术)，不是"AI 又错哪了"(那归 C2)
     keywords:
-      - hard problem
-      - unsolved
-      - open problem
-      - discovery
-      - deep research
-      - ai scientist
-      - co-scientist
-      - self-improving
-      - autonomous research
-      - scientific
-      - hypothesis
+      - clinical trial
+      - effect size
+      - endpoint
+      - phase 3
+      - readout
+      - translational
+      - causal target
+      - replication
       - drug discovery
-      - target
       - protein
       - material
       - chemistry
@@ -30,7 +28,10 @@ columns:
       - prediction
       - probability
       - scenario
-      - reasoning under uncertainty
+      - regulatory
+      - pipeline
+      - unsolved
+      - open problem
 
   C2:
     name: 验证拆解/反AI幻觉 (Verification teardown)
