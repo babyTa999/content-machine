@@ -15,18 +15,13 @@ practitioner_pain_reddit:            # 从业者直接问痛（safe-social 只�
     Apodex4DeepTech: [MLQuestions, datascience, MachineLearning]
   note: 只取有 S.O.S./Help/[Q]/[R] 求助文化的技术版；已砍 labrats/AskAcademia/biotech/PhD/LocalLLaMA/MaterialsScience。
 
-arxiv:                               # 降权源——多方法论文，judge Q0 只留亮出 PROBLEM 的
-  method: curl
+arxiv:                               # 收窄(2026-07-24 B)：只留"AI 失败/不可靠"研究——arxiv 唯一喂得动②的东西
+  method: curl                       # 方法/成果论文 4 组 query 全删(judge Q0 本就全砍、纯拖慢+限流)
   status: auto
   window_h: 168
-  max_results: 10
-  queries:                           # 值含双引号→单引号包裹（YAML 安全）
-    eval-verification: '(cat:cs.AI OR cat:cs.LG) AND (abs:verification OR abs:evaluation OR abs:benchmark OR abs:hallucination OR abs:calibration OR abs:reproducibility)'
-    ai-for-science: 'abs:"AI for science" OR abs:"autonomous research" OR abs:"AI scientist" OR abs:"hypothesis generation" OR abs:"scientific discovery" OR abs:"deep research"'
-    agents-reasoning: '(cat:cs.AI OR cat:cs.CL) AND (abs:"LLM agent" OR abs:"multi-agent" OR abs:reasoning OR abs:"self-improving")'
-    forecasting: '(abs:forecasting OR abs:prediction) AND (abs:uncertainty OR abs:calibration OR abs:probability)'
-    hallucination-reliability: '(cat:cs.CL OR cat:cs.AI) AND (abs:hallucination OR abs:"factual error" OR abs:faithfulness OR abs:"unreliable" OR abs:"misleading" OR abs:"citation" OR abs:"fact verification")'
-    biomed-materials-discovery: '(abs:"drug discovery" OR abs:"protein design" OR abs:"materials discovery" OR abs:"molecular design" OR abs:"genomic") AND (abs:"machine learning" OR abs:model OR abs:agent)'
+  max_results: 12
+  queries:                           # 只抓揭示 LLM/agent 失败模式/不可靠/局限的研究，非"提出新方法"的 showcase
+    ai-failure-modes: '(cat:cs.AI OR cat:cs.CL OR cat:cs.LG) AND (abs:hallucination OR abs:unreliable OR abs:"fails to" OR abs:overconfident OR abs:"not robust" OR abs:brittle OR abs:"silently wrong") AND (abs:LLM OR abs:"language model" OR abs:agent OR abs:"deep research")'
 
 prediction_banks:                    # Metaculus 预测题（含预测切面 7+5 类）
   method: jina                       # REST API 已 403(2026-07)→Jina 抓搜索页 #### [title](url)
