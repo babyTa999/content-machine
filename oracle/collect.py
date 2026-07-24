@@ -269,6 +269,49 @@ def collect_official_challenges():
         time.sleep(1)
     return out
 
+def collect_ai_incidents():
+    """② verification 事件源——AI 在 science/deeptech 领域闯祸的真实新闻事件。
+    Google News RSS（免费无 key；s.jina.ai/Exa 已需 key）。
+    ⚠️ ICP 镜头：只找 science lab / deeptech 会痛的（科研造假/假citation/bio模型/deep research/
+    benchmark），不是 AI 客服/消费产品翻车那类通用噪音。借 newsjack Detect 思路但镜头锚我们 ICP；
+    新鲜度放松（好案例新旧都行）；coarse 相关性 + ICP 闸交判官（见 选题judge-X ②判据）。"""
+    import xml.etree.ElementTree as ET
+    queries = [
+        "AI fabricated research data retraction",
+        "AI hallucinated citation scientific paper",
+        "deep research AI unreliable wrong conclusion",
+        "AI benchmark data leakage flawed evaluation",
+        "AI drug discovery materials prediction wrong",
+    ]
+    lname = lambda el: el.tag.rsplit("}", 1)[-1]
+    out, seen = [], set()
+    for q in queries:
+        try:
+            url = ("https://news.google.com/rss/search?q=" +
+                   urllib.parse.quote(q) + "&hl=en-US&gl=US&ceid=US:en")
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 content-machine/1.0"})
+            with urllib.request.urlopen(req, timeout=25) as r:
+                root = ET.fromstring(r.read())
+        except Exception as e:
+            print(f"  [ai_incident:{q[:22]}] ERR {e}"); time.sleep(1.5); continue
+        items = [el for el in root.iter() if lname(el) == "item"]
+        for it in items[:8]:
+            title, link = "", ""
+            for ch in it:
+                ln = lname(ch)
+                if ln == "title" and ch.text: title = ch.text.strip()
+                elif ln == "link" and ch.text: link = ch.text.strip()
+            if not title or not link or title.endswith("- Google News") or title in seen:
+                continue
+            seen.add(title)
+            # pillar_hint=None：判官按标题语义判 ②（query 已锚 ICP，命中多为 ② 事件）
+            out.append({
+                "source": "ai_incident", "pillar_hint": None,
+                "url": link, "text": title, "lang": "en", "age_h": 0, "eng": 0,
+            })
+        time.sleep(1.5)  # 礼貌间隔
+    return out
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -289,6 +332,8 @@ def main():
     print("collect: C1 专属源 (Metaculus + 官方悬赏) ...")
     cands += collect_metaculus()
     cands += collect_official_challenges()
+    print("collect: ② AI 闯祸事件 (Google News RSS, ICP 镜头 science/deeptech) ...")
+    cands += collect_ai_incidents()
     if not args.no_reddit:
         print("collect: Reddit via safe-social (u/Top_Shop_6167 read-only) ...")
         cands += collect_reddit(now)

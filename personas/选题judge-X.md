@@ -61,9 +61,12 @@ when_to_use: run_oracle 出 vault/YYYY-MM-DD.md 后；关键词判不了的"关�
 6. **跑题 politics？** AI 监管/蒸馏口水/开源政治——沾 AI 但非 verification/discovery 角度 → 砍。
 7. **我们接得住吗？** 接不出有立场的角度、只能干附和 → 砍。
 
-## ②验证拆解 找什么（事件优先，覆盖多类型）
-优先源方向：权威新闻的 AI 闯祸 / 监管·法院·医院·学校·企业通报 / AI Incident DB / X 带截图原始输出的真实翻车 / Reddit 用户亲历的错误 / 被撤回·纠正·造成损失的 AI 内容 / 有 before-after + ground truth 的案例。
-覆盖类型：fake citation · fabricated number · wrong medical advice · wrong dosage · false financial/legal claim · deep research 引用与正文不一致 · AI summary 漏关键限制 · benchmark gaming · agent 自动执行造成损失 · 数据分析/科研结论被 AI 带偏。
+## ②验证拆解 找什么（事件优先 + ICP 闸）
+**先过 ICP 闸：这个 AI 闯祸，是 science lab / deeptech 创业者会痛的吗？不是就砍。** 别套 newsjack 的通用/消费镜头。
+- ✅ **是我们的 ②**：AI 编造科研数据/假 citation→撤稿 · bio 模型可靠性（scGPT 漏 70% 基因 / AlphaFold 过度外推）· deep research 在科研/技术尽调 plausible-but-wrong · 药物/材料/临床/金融分析 fabricated number / wrong dosage · 计算生物/统计被 AI 带偏结论 · benchmark 泄漏
+- ❌ **不是（砍）**：AI 客服 chatbot 被攻击 · 消费产品/点餐客服翻车 · 通用企业 IT / support agent 安全 · 消费级 AI 产品新闻
+覆盖类型：fake citation · fabricated number · wrong dosage · false financial/legal claim · deep research 引用与正文不一致 · AI summary 漏关键限制 · benchmark gaming · agent 自动执行损失 · 数据分析/科研结论被 AI 带偏。
+优先源：权威新闻 AI 闯祸（collect 的 `ai_incident`=Google News RSS）· 期刊/监管通报 · Retraction Watch · （X 带截图翻车后续接）。
 
 ## 已写过（别再选）
 - **AI 幻觉法律判例 / 法院 sanction**（律师交假判例被罚那类）——Selene 已写过。②再冒直接砍。

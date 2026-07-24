@@ -37,9 +37,11 @@ prediction_banks:                    # 预测切面现成题库（含 7+5 类）
 # ========== ② 验证拆解：AI 幻觉真实闯祸 ==========
 
 ai_incident_db:
-  method: agent-reach Exa 搜 + Jina 读页（免费；已实测出 BBC ChatGPT 致命误诊案）
-  status: staged
-  sources: [AI Incident Database (incidentdatabase.ai), AIAAIC repository, Exa 搜"AI hallucination/incident"]
+  method: Google News RSS（免费无 key）——ICP 镜头 query 搜 science/deeptech 的 AI 闯祸
+  status: auto
+  # ⚠️ ICP 闸：只要 science lab/deeptech 会痛的(科研造假/假citation/bio模型/deep research/benchmark)，砍 AI客服/消费级噪音
+  queries: [AI fabricated research data retraction, AI hallucinated citation, deep research unreliable, AI benchmark leakage, AI drug/materials prediction wrong]
+  note: s.jina.ai/Exa 已需 key（2026-07）；Google News RSS 是免费替代。X 带截图翻车后续接。
 
 retraction_watch:                    # AI 生成/编造数据被撤稿
   method: rss
