@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+# macOS
+.DS_Store
+# 日志/临时
+*.log
+# vault：只留结构(README+.gitkeep)，不提交生成的日报/原始采集数据
+vault/*
+!vault/README.md
+!vault/.gitkeep

@@ -1,0 +1,107 @@
+# 监听名单 + 竞品红线（Selene 2026-07-24 定稿）
+# 抓法：safe-social x user-posts <handle> -n 10 --json（@kw90qk 只读）
+# 两个用途：① 个人号 → C4 圈内接话 + 内容选题源（他们发的契合内容可直接转选题）
+#           ② 竞品 → 情报监听 + 内容红线（见文末 content_rules）
+
+# ========== 个人号（监听 + 接话 + 选题源）==========
+watchlist:
+  T1_圈内大V:
+    - karpathy
+    - DrJimFan
+    - ylecun
+    - GaryMarcus
+    - AndrewYNg
+    - jeremyphoward
+    - hardmaru
+
+  T2_eval_benchmark:      # eval/benchmark 权威，互动占比高，帖子可直接转选题
+    - simonw
+    - swyx
+    - ArtificialAnlys
+    - EpochAIResearch
+    - polynoamial
+    - percyliang          # HELM
+    - DanHendrycks        # MMLU / HLE
+    - natolambert
+    - clefourrier         # HF Leaderboard（⚠️休假至 2026-12）
+    - _jasonwei
+    - sarahookr
+
+  T3_计算生物_医学AI:
+    - DeryaTR_            # Selene 保留
+    - MoAlQuraishi        # OpenFold，对炒作有清醒批判
+    - sokrypton           # ColabFold
+    - pranavrajpurkar     # 医学 AI 评测
+    - EricTopol           # 生医风向标
+    - mmbronstein
+    - aditimerch
+    - samuelhking
+    - julia_kiseleva
+    - Gabogonzalez515
+    - BrianHie
+    - dagarfield          # ⚠️ Anthropic 员工(AI for Life Sciences)——接话遵竞品红线A，待 Selene 定去留
+
+  T4_AI4science创始人:    # 监听+选题源；⚠️多为竞品关联，接话遵红线B（不直接明示其公司/别harsh）
+    - andrewwhite01       # Edison/FutureHouse
+    - SGRodriques         # Edison CEO
+    - LiamFedus           # Periodic（前 OpenAI）
+    - CorinWagen          # Rowan，冷静拆解 AI 科学炒作
+    - maxjaderberg        # Isomorphic 总裁
+    - GabriCorso          # Boltz_bio 联创
+    - enfeinberg          # Genesis Therapeutics CEO
+    - Ronalfa             # NOETIK CEO
+
+institutions:             # 研究所/机构官号，监听 bio/科学新闻——喂今日能发 + bio 接话（Selene 2026-07-24 加）
+  - arcinstitute
+  - ScienceMagazine
+  - Nature
+  - embl
+  - broadinstitute
+  - NIH
+
+# ========== 竞品（情报监听 + 内容红线）==========
+competitors:
+  big4:                   # 红线A：永不直接明示；内涵暗示也少做；除非与验证/科学强相关
+    - OpenAI
+    - AnthropicAI
+    - perplexity_ai
+    - GoogleDeepMind
+  vertical_peers:         # 红线B：不直接明示；可内涵暗含；别太 harsh
+    最贴内核_自主科研:
+      - FutureHouseSF
+      - EdisonSci         # Kosmos
+      - SakanaAILabs      # The AI Scientist
+      - LilaSciences
+      - periodiclabs
+    生医垂直:
+      - biomni
+      - IsomorphicLabs
+      - chaidiscovery
+      - iambic_ai
+      - RecursionPharma
+      - readysetpotato
+      - genbioai          # 原 T3，实为公司
+      - NOETIK_ai         # 原 T3，实为公司（CEO=Ronalfa）
+      - KiraGenBio
+      - genesismolai
+      - formationbio
+      - Boltz_bio         # GabriCorso 的公司
+    材料化学:
+      - OrbMaterials
+      - radicalai_inc
+    研究工作流_证据检索:
+      - elicitorg
+      - UndermindAI
+      - ConsensusNLP
+
+# ========== 内容红线（写内容/接话时执行）==========
+content_rules:
+  big4: "永不直接明示 @提及；内涵暗示也尽量少；仅当与 verification/科学强相关时才可轻碰。"
+  vertical_peers: "不直接明示；可内涵暗含做对照；语气别太 harsh（不站队衰败、不硬蹭 launch）。"
+  general: "接话只接能挂 verification/discovery 的话题；官方号不加别人/不置顶别人。"
+
+# ========== 监听参数 ==========
+filter:
+  window_hours: 48
+  skip_retweets: true
+  eng_formula: "likes + 2*retweets + 2*quotes + replies"

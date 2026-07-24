@@ -1,0 +1,106 @@
+# 内容栏目定义（身份锚）—— 详见 docs/02-内容栏目.md
+# 🔑 PROBLEM-FIRST（2026-07-24）：找的是 ICP 的 PROBLEM/痛点/共鸣，不是 showcase 论文、不自夸、不夸人踩竞品。
+# 2026-07-24 后 keywords 只是给 score.py 的软提示(col_hint)，不再当生杀 gate；真正分类=判官语义(见 personas/选题judge-X.md)。
+# scrapable: 是否由 collect 外部采集喂。③世界观(搬blog)/⑤UGC(供料) 非采集。
+
+columns:
+  C1:
+    name: 难题求解 (Hard-problem solving·主池)
+    scrapable: true
+    target_signal: [心智, 收藏, 曝光]
+    keywords:
+      - hard problem
+      - unsolved
+      - open problem
+      - discovery
+      - deep research
+      - ai scientist
+      - co-scientist
+      - self-improving
+      - autonomous research
+      - scientific
+      - hypothesis
+      - drug discovery
+      - target
+      - protein
+      - material
+      - chemistry
+      - clinical
+      - forecast
+      - prediction
+      - probability
+      - scenario
+      - reasoning under uncertainty
+
+  C2:
+    name: 验证拆解/反AI幻觉 (Verification teardown)
+    scrapable: true
+    target_signal: [收藏, 评论]
+    # ⚠️ 反的是"AI 自信给错/编造(hallucination)造成真实代价、verification 抓住它"，
+    #    不是"AI 能力弱/benchmark 得分低/AI 干不好"(那是反 AI 能力，自戳)。
+    #    锚案例：陷阱题→模型 over-claim/编造；法官罚假判例；假 citation/wrong dosage。
+    keywords:
+      - hallucination
+      - hallucinated
+      - fabricat
+      - made-up
+      - false conclusion
+      - fake citation
+      - wrong citation
+      - confidently wrong
+      - over-claim
+      - misleading knowledge
+      - unfaithful
+      - unverified claim
+      - contamination
+      - cheat on
+      - benchmark cheat
+      - answer key
+      - verification gate
+      - evidence chain
+
+  C3:
+    name: 世界观 (Worldview·底色)
+    scrapable: false
+    note: discovery≠generative；从老板 blog 搬现成，不外部采集
+
+  C4:
+    name: 圈内接话 (Deep-interaction on others)
+    scrapable: true
+    source: watchlist         # collect.py 给 pillar_hint = C4
+    target_signal: [曝光, profile_click]
+    # ⚠️ 找的是：(a)共鸣——同哲学的帖→顺势自陈；(b)痛点——有人吐槽我们能解的痛→荐己。
+    #    别找夸奖帖、别踩竞品(含垂类)。见 docs/02 ④。
+
+  C5:
+    name: ApodexSolvers/SolversOfWeek (UGC)
+    scrapable: false
+    note: Selene 供料，不采集
+
+# 两大 ICP 内容分类命名（走 hashtag+系列名）—— score.py 给每条候选打 ICP 标签
+icp:
+  Apodex4Science:
+    keywords: [research lab, scientist, protein, genomic, biology, biomedical, material, chemistry, physics, clinical, drug, academic, paper, arxiv, experiment, molecul]
+  Apodex4DeepTech:
+    keywords: [startup, founder, market, competitive, regulatory, policy, supply chain, geopolit, investment, funding, roadmap, go-to-market, strategy, product, enterprise]
+
+# 明确排除，不进主号原创选题池（详见 docs/02）
+exclude:
+  - name: 预测结果/世界杯/体育
+    reason: 结果预测归官网+blog；主号只做"预测科学/预测难题求解"，不给结果
+    keywords: [world cup, who will win, betting odds, polymarket price, football, soccer, match result, sports bet]
+  - name: 中文内容
+    reason: 主号纯英文；中文另走独立渠道
+    rule: lang != "en" 即排除主号
+  - name: 噪音(个人生活/寒暄/直播promo)
+    reason: 非选题价值——个人生活、寒暄、直播/活动吆喝
+    keywords: [painting, morning run, offsite, "come join", "we are now live", "launch stream", "join us", "join the", giveaway, lmao, "just like me", "happy birthday", "good morning", "we are live", "come build", "tune in"]
+  - name: 竞品自吹/产品launch/骂战
+    reason: 竞品 launch 不硬蹭、衰败/骂战不站队(RULES)；别人自吹产品不是我们的选题
+    keywords: [despise, "don't be like", misanthropic, "announcing ", "we just shipped", "our team just shipped", "excited to launch", "excited to announce", "now live on", "proud to", "check it out"]
+  - name: 反AI能力(frame错)
+    reason: 反 AI 能力(AI 弱/得分低/干不好)——我们自己就是 AI，不做此 frame；C2 只做反幻觉
+    keywords: ["humans hit", "humans score", "far below human", "ai still cannot", "ai fails at", "models struggle"]
+  - name: 法律AI幻觉判例(已写过)
+    reason: AI 幻觉法律判例/法院 sanction Selene 已写过，别再当选题（2026-07-24）
+    keywords: ["sanctioned", "fabricated citation", "fake citation", "law firm", "court fined", "bar association", "legal brief", "hallucinated case"]

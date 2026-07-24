@@ -1,0 +1,86 @@
+# 采集源 —— PROBLEM-FIRST（2026-07-24 重建）
+# 原则：抓 ICP 痛点 / 官方悬赏 / 预测题库 / AI 事故——不抓方法论文、不抓自夸材料。
+# method: reddit(safe-social) / rss(curl) / exa(agent-reach 免费网页搜索) / safe-social x / api / manual
+# status: auto=collect.py 已接 ; staged=待接(Exa/api/人工)
+
+# ========== ① 难题求解：ICP 真实硬难题 ==========
+
+practitioner_pain_reddit:            # 从业者直接问痛（已 agent-reach 调研锁定 2026-07-24）
+  method: safe-social reddit
+  status: auto
+  subs:
+    A4Science: [bioinformatics, computationalbiology, chemistry, statistics]
+    A4DeepTech: [MLQuestions, datascience, MachineLearning]
+  note: >
+    只取有 S.O.S./Help/[Q]/[R] 求助文化的技术版。已砍：labrats(meme)、AskAcademia(职业)、
+    AskEngineers(通用工程非ICP)、biotech(薪资)、PhD(读博生活)、LocalLLaMA(蒸馏政治)、MaterialsScience(弱)。
+
+official_challenges:                 # 官方悬赏的硬问题 = ICP 的痛，明写
+  method: agent-reach Exa 搜 + Jina 读页（免费）
+  status: staged
+  sources: [NIH Challenges, NSF, DARPA, ARPA-H solicitations/RFP, XPRIZE, grand challenges]
+
+prediction_banks:                    # 预测切面现成题库（含 7+5 类）
+  method: Jina 读页 / 公开 API（免费；都是公开页）
+  status: staged
+  sources:
+    - SSPP (socialscienceprediction.org) —— DellaVigna 100 项目 1,482 题，有 ground truth
+    - Metaculus / prediction markets
+    - FDA PDUFA 日历、临床 readout 日历、财报日历
+
+review_open_questions:               # 综述的 open questions / limitations / future work
+  method: agent-reach Exa 搜 + Jina 读页（免费）
+  status: staged
+  note: 每篇综述结尾的"还没解决的"——比方法论文值钱
+
+# ========== ② 验证拆解：AI 幻觉真实闯祸 ==========
+
+ai_incident_db:
+  method: agent-reach Exa 搜 + Jina 读页（免费；已实测出 BBC ChatGPT 致命误诊案）
+  status: staged
+  sources: [AI Incident Database (incidentdatabase.ai), AIAAIC repository, Exa 搜"AI hallucination/incident"]
+
+retraction_watch:                    # AI 生成/编造数据被撤稿
+  method: rss
+  status: auto
+  feed: https://retractionwatch.com/feed/
+
+# ⛔ 法律 AI 幻觉判例 / 法院 sanction（Damien Charlotin 库等）
+#    —— Selene 已写过，不抓；pillars.yml exclude + 判官 已双重拦
+
+# ========== ④ 圈内接话（watchlist 盯熟人 + 关键词搜捞生人）==========
+x_watchlist:
+  method: safe-social x
+  status: auto
+  note: 个人号 + 机构官号，见 config/watchlist.yml；找共鸣/痛点帖，不夸不踩
+
+x_keyword_search:                    # 捞非 watchlist 的共鸣/痛点帖（Selene 2026-07-24：watchlist 太窄）
+  # 更正 2026-07-24：safe-social X search 其实能用（之前"404"是我用 macOS 没有的 timeout 命令 + 连甩限流的假象）。
+  # 两条路，Selene 定：
+  #   A) safe-social x search —— 免费；但偶发限流(要拉开间隔)、且用我们 @kw90qk cookie 号(有号风险)
+  #   B) monid /apidojo/tweet-scraper —— $0.0006/条(可忽略)；稳、不碰我们的号、支持高级过滤(min eng/exclude RT/date)
+  # 实测：A 出 StructureGuard 共鸣+Ricardo 爆帖；B 需 AI-anchored query + sort=Top(否则 generic 命中噪音)
+  method: safe-social x search（A，Selene 2026-07-24 定用免费的）
+  status: auto —— ⚠️注意：拉开间隔别连甩(会限流)、别用 macOS 没有的 timeout。monid(B) 留作上量/不碰号时的备选。
+  queries:
+    共鸣_同哲学: ["verification matters", "cannot trust AI output", "reproducibility crisis", "AI confidently wrong", "evidence over answers"]
+    痛点_我们能解: ["AI hallucinated a citation", "how do I verify AI", "AI made up a number", "model confidently wrong", "spent hours verifying AI"]
+  note: 命中的帖 → ④接话（共鸣顺势自陈 / 痛点荐己），不夸不踩
+
+# ========== 基础源（保留，judge 用 problem-first Q0 过滤方法论文）==========
+hackernews:                          # front_page AI，偶有 incident/痛点
+  method: curl
+  status: auto
+arxiv:                               # 降权——多方法论文；judge 只留亮出 PROBLEM 的
+  method: curl
+  status: auto
+hf_papers:                           # 同上，降权
+  method: curl
+  status: auto
+journal_rss:                         # bio/science 新闻，judge 过滤
+  method: rss
+  status: auto
+  feeds: [Nature, NatureComms, Science]
+
+downrank:
+  - 方法论文/自夸材料：problem-first 下一律降权，judge Q0 拦
