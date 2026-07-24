@@ -82,6 +82,53 @@ def collect_x(watch_cfg, now, cfg):
         time.sleep(1.2)
     return out
 
+def _x_age_h(created, now):
+    """X search 的 createdAt 是 Twitter 格式 'Thu Jul 23 10:22:18 +0000 2026'。"""
+    try:
+        t = dt.datetime.strptime(created, "%a %b %d %H:%M:%S %z %Y")
+        return (now - t).total_seconds() / 3600
+    except Exception:
+        return None
+
+def collect_x_search(now, cfg):
+    """① / ④ 从 X 捞非 watchlist 的真实抱怨/争论/翻车（safe-social x search，@kw90qk 只读）。
+    ⚠️ 拉开间隔别连甩(限流)、别用 macOS 没有的 timeout。判官判 ①(做原创难题) 或 ④(顺势接话)。"""
+    groups = cfg.get("queries", {})
+    queries = []
+    if isinstance(groups, dict):
+        for qs in groups.values(): queries += list(qs or [])
+    else:
+        queries = list(groups or [])
+    n = cfg.get("per_query", 6)
+    window = cfg.get("window_h", 336)
+    min_eng = cfg.get("min_engagement", 5)
+    out, seen = [], set()
+    for q in queries:
+        try:
+            r = subprocess.run([SAFE_SOCIAL, "x", "search", q, "-n", str(n), "--json"],
+                               capture_output=True, text=True, timeout=90)
+            data = (json.loads(r.stdout) or {}).get("data") or []
+        except Exception as e:
+            print(f"  [x_search:{q[:20]}] ERR {e}"); time.sleep(2.5); continue
+        for p in data:
+            pid, text = p.get("id"), p.get("text", "")
+            if not pid or pid in seen: continue
+            m = p.get("metrics") or {}
+            eng = m.get("likes",0)+2*m.get("retweets",0)+2*m.get("quotes",0)+m.get("replies",0)
+            if eng < min_eng: continue                       # 过滤零互动噪音（生人搜索噪音多）
+            age = _x_age_h(p.get("createdAt", ""), now)
+            if age is not None and window and (age > window or age < 0): continue
+            seen.add(pid)
+            author = (p.get("author") or {}).get("screenName", "")
+            out.append({
+                "source": "x_search", "pillar_hint": None, "query": q,
+                "handle": author, "url": f"https://x.com/{author}/status/{pid}",
+                "text": text[:500], "lang": p.get("lang"),
+                "age_h": round(age,1) if age is not None else 0, "eng": eng, "metrics": m,
+            })
+        time.sleep(2.5)  # 拉开间隔防限流
+    return out
+
 def collect_hn(cfg):
     out, q, hits = [], cfg.get("query", "AI"), cfg.get("hits", 8)
     try:
@@ -301,7 +348,9 @@ def main():
     if on("x_watchlist") and not args.no_x:
         print("collect: X watchlist (safe-social 只读) ...")
         cands += collect_x(watch, now, cfg("x_watchlist"))
-    # 注：x_keyword_search status=staged 且无 collector → 自动不采（配置层真跳过）
+    if on("x_keyword_search") and not args.no_x:
+        print("collect: X 关键词搜生人 (safe-social 只读, 判官判①/④) ...")
+        cands += collect_x_search(now, cfg("x_keyword_search"))
 
     # 去重：归一化 URL（arXiv 抹 abs/pdf/版本号差异）
     def norm(u):

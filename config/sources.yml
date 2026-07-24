@@ -76,13 +76,16 @@ x_watchlist:                         # 个人 + 机构官号，见 watchlist.yml
   window_h_institution: 168          # 机构官号当选题素材
   note: (a)共鸣顺势自陈 / (b)痛点荐己，不夸不踩。
 
-x_keyword_search:                    # 捞非 watchlist 的生人——⚠️ 未实现，status!=auto 故不采
+x_keyword_search:                    # 捞非 watchlist 的生人真实抱怨/争论/翻车 → 判官判①(原创难题)或④(接话)
   method: safe-social x search
-  status: staged
+  status: auto
+  per_query: 6
+  window_h: 336                      # 14 天宽窗；接话鲜度由判官判（痛点常青）
+  min_engagement: 5                  # 过滤零互动噪音（生人搜索噪音多）
   queries:
     resonance: ["verification matters", "cannot trust AI output", "reproducibility crisis", "AI confidently wrong"]
     pain: ["AI hallucinated a citation", "how do I verify AI", "AI made up a number", "spent hours verifying AI"]
-  note: 待接 collect_x_search。safe-social 搜有号风险(拉开间隔/别 timeout)；monid(B $0.0006/条不碰号)备选。
+  note: ⚠️@kw90qk 只读、拉开间隔别连甩(限流)、别用 macOS 无的 timeout。monid(B $0.0006/条不碰号)备选。
 
 # ========== 基础源 ==========
 
