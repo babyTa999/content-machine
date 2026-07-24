@@ -53,8 +53,9 @@
 | ① Problem-aware | Reddit 7 个问痛版（bioinformatics / computationalbiology / chemistry / statistics / MLQuestions / datascience / MachineLearning） | auto |
 | | Metaculus 预测题（Jina 抓页）· 官方悬赏（USA.gov / XPRIZE / ARPA-H，Jina + 路径过滤） | auto |
 | | arXiv 多 query（降权——多方法论文，判官 Q0 过滤，只留亮出 PROBLEM 的） | auto |
-| ② Product-aware | Retraction Watch RSS（AI 编造 / 撤稿） | auto |
-| | AI Incident Database（AIAAIC，Exa 免费搜） | staged |
+| ② Product-aware | Retraction Watch RSS（编造 / 撤稿）· arXiv `hallucination/reliability` query | auto |
+| | AI Incident Database（AIAAIC）· Exa 搜 "AI hallucination 闯祸 case"（免费） | staged |
+| | ＋判官从全池语义捞（X 吐槽 / journal / HN 里 AI 闯祸的）—— **闯祸 case 本就稀缺，靠多源汇** | — |
 | ④ Engagement | X watchlist（个人 + 机构官号，见 `watchlist.yml`） | auto |
 | | X 关键词搜生人（共鸣 / 痛点 query）—— **代码未实现，目前只跑 watchlist** | staged |
 | 基础源 | HackerNews front-page · HF daily papers · journal RSS（Nature / NatureComms / Science） | auto |
@@ -86,8 +87,6 @@
 | **hook** | [`personas/hook生成器-X.md`](personas/hook生成器-X.md) → skill `eddie-shleyner` 打磨 | 10 moves + Apodex Hook 三型；`julian-shapiro` 备选（偏 viral，不常备） |
 | **起草** | voice skill **à la carte**（想调味取 1 个，不叠不强制） | ①`apodex-tech-voice` / `karpathy-explain`　②`apodex-tech-voice` / `selene-academic-voice`　③搬老板 blog　④`selene-community-voice`　｜ 大件迭代 `selene-content-sop` |
 | **事实核** | [`personas/产品技术专家.md`](personas/产品技术专家.md) | 数字 verbatim / claim 回一手源 / RULES 红线 |
-
-> ⚠️ **不学旧声音**：`apodex-x-official-style` 已移出写作链（pivot 前旧帖，限制内容 + 夹带作废口径）。写作只学**算法**（Phase 6 + `Desktop/X 渠道运营.md`）+ **红线**（RULES.md）。
 
 📄 全文：[`docs/05-写作与分发.md`](docs/05-写作与分发.md)（voice skill 备查表）
 
@@ -130,6 +129,15 @@
 - **X 只读只走 `~/Apodex/内容/safe-social`（@kw90qk / manual:edge）**——绝不用裸 twitter / agent-reach twitter。X 搜索能用，但别连甩（限流）、**别用 macOS 没有的 `timeout`**。
 - cookie 工具**只读不写**：不发帖 / 回复 / 点赞 / 关注。接话回复本身是人工动作。
 - 对外文案**无偷偷加的承诺**，成稿默认无承诺安全版。
+
+## ⚙️ Apodex 专属（依赖本地 / 个人 skill，clone 通用版时替换）
+
+以下指向 Apodex 本地资料或 Selene 个人 skill——**clone 出去拿不到，换产品时替换成你自己的**：
+
+- **产品口径源**（`personas/产品技术专家.md` 核 claim 用）：`~/Apodex/产品资料/*`（技术报告 / Benchmark / 架构 / 产品命名）+ `~/Apodex/RULES.md`
+- **算法拆解依据**：`~/Desktop/X 渠道运营.md`（Phase 4/6/7 的 X 算法机制来源）
+- **voice / 分发 skill**：`apodex-tech-voice` / `selene-*` / `eddie-shleyner` / `/linkedin-algorithm` 等（个人 skill 库，非 repo 文件）
+- **配置**：`config/pillars.yml`（ICP / exclude）· `watchlist.yml`（圈子）· `sources.yml`（Reddit 版 / 悬赏页）—— 全是 Apodex 具体，换产品重填
 
 ## 迭代纪律
 

@@ -5,4 +5,4 @@
 - **`YYYY-MM-DD-judged.md`**（判官）：`✅ 判官保留`（按栏目分表、发/接分开、带 link）+ `✂️ 判官砍掉`（带否决原因）。← 你看这份挑。
 
 - `.raw-*.json` / `.judge-*.log` 是中间产物，可删。
-- 判官保留的候选 → 跑 `oracle/brief.py` 出 brief → 走 `selene-content-sop` 起草。
+- 判官保留的候选 → `personas/角度生成器-X` 切角度 → 起草（见根 README Phase 5）。
