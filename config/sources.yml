@@ -16,21 +16,24 @@ practitioner_pain_reddit:            # 从业者直接问痛（已 agent-reach �
     AskEngineers(通用工程非ICP)、biotech(薪资)、PhD(读博生活)、LocalLLaMA(蒸馏政治)、MaterialsScience(弱)。
 
 official_challenges:                 # 官方悬赏的硬问题 = ICP 的痛，明写
-  method: agent-reach Exa 搜 + Jina 读页（免费）
-  status: staged
-  sources: [NIH Challenges, NSF, DARPA, ARPA-H solicitations/RFP, XPRIZE, grand challenges]
+  method: Jina Reader 抓已知页面（免费）
+  status: auto
+  sources: [NIH Challenges (commonfund), XPRIZE, ARPA-H research-and-funding]
+  note: Jina Reader 提取页面 markdown 中的链接标题；NSF/DARPA 后续按需加页面
 
 prediction_banks:                    # 预测切面现成题库（含 7+5 类）
-  method: Jina 读页 / 公开 API（免费；都是公开页）
-  status: staged
+  method: Metaculus 公开 REST API（免费无 auth）
+  status: auto
   sources:
-    - SSPP (socialscienceprediction.org) —— DellaVigna 100 项目 1,482 题，有 ground truth
-    - Metaculus / prediction markets
-    - FDA PDUFA 日历、临床 readout 日历、财报日历
+    - Metaculus open questions（AI/science/biology/drug/protein/climate）—— 已接入 collect.py
+    - SSPP (socialscienceprediction.org) —— DellaVigna 100 项目 1,482 题，有 ground truth（待 Jina 接）
+    - FDA PDUFA 日历、临床 readout 日历、财报日历（待接）
 
 review_open_questions:               # 综述的 open questions / limitations / future work
-  method: agent-reach Exa 搜 + Jina 读页（免费）
-  status: staged
+  method: arXiv API 搜 review/survey 类论文（免费）
+  status: auto
+  window: 30 天——综述出得少但价值密度最高
+  queries: [ai-review (cs.AI/LG/CL + open question/unsolved), bio-review (q-bio + open question/unsolved)]
   note: 每篇综述结尾的"还没解决的"——比方法论文值钱
 
 # ========== ② 验证拆解：AI 幻觉真实闯祸 ==========

@@ -47,7 +47,8 @@ def collect_x(watch_cfg, now):
             if p.get("isRetweet"):
                 continue
             age = iso_age_h(p.get("createdAtISO", ""), now)
-            if age is None or age > 48 or age < 0:
+            max_age = 168 if tier == "institution" else 48
+            if age is None or age > max_age or age < 0:
                 continue
             m = p.get("metrics") or {}
             eng = m.get("likes",0)+2*m.get("retweets",0)+2*m.get("quotes",0)+m.get("replies",0)
@@ -174,7 +175,8 @@ def collect_hf():
 def collect_reddit(now, subs=("bioinformatics", "computationalbiology", "chemistry",
                               "statistics", "MLQuestions", "datascience", "MachineLearning")):
     """Reddit via safe-social（u/Top_Shop_6167 只读）——从业者问痛(①)供给。
-    子版已 agent-reach 调研锁定 2026-07-24：只取有 S.O.S./Help/[Q]/[R] 求助文化的技术版。"""
+    子版已 agent-reach 调研锁定 2026-07-24：只取有 S.O.S./Help/[Q]/[R] 求助文化的技术版。
+    窗口 7 天——痛点帖是常青选题种子，不是新闻。"""
     out = []
     for sub in subs:
         try:
@@ -191,7 +193,7 @@ def collect_reddit(now, subs=("bioinformatics", "computationalbiology", "chemist
             age = None
             if created:
                 age = (now.timestamp() - float(created)) / 3600
-            if age is not None and age > 72:
+            if age is not None and age > 168:
                 continue
             title = p.get("title", "")
             body = (p.get("selftext") or "")[:200]
@@ -203,6 +205,99 @@ def collect_reddit(now, subs=("bioinformatics", "computationalbiology", "chemist
                 "eng": p.get("score", 0) + p.get("num_comments", 0),
             })
         time.sleep(1.2)
+    return out
+
+# ---------- C1 staged → auto（2026-07-24 接入） ----------
+
+def _jina_read(url, max_chars=5000):
+    """Jina Reader 免费——URL → clean markdown。"""
+    req = urllib.request.Request(
+        f"https://r.jina.ai/{url}",
+        headers={"User-Agent": "content-machine/1.0", "Accept": "text/plain"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return r.read().decode()[:max_chars]
+
+def collect_metaculus():
+    """Metaculus 预测题库——C1 预测切面供给。公开 REST API，免费无 auth。
+    只取 open 预测题，无时间窗口限制——题开着就是选题种子。"""
+    out = []
+    try:
+        url = ("https://www.metaculus.com/api2/questions/"
+               "?limit=20&order_by=-activity&status=open&type=forecast"
+               "&search=AI+science+biology+drug+protein+climate")
+        d = _get(url, timeout=25)
+        for q in d.get("results", []):
+            title = q.get("title", "")
+            qid = q.get("id")
+            if not title or not qid:
+                continue
+            out.append({
+                "source": "prediction_banks", "pillar_hint": "C1",
+                "url": f"https://www.metaculus.com/questions/{qid}/",
+                "text": title, "lang": "en",
+                "age_h": 0, "eng": q.get("number_of_predictions", 0),
+            })
+    except Exception as e:
+        print(f"  [metaculus] ERR {e}")
+    return out
+
+def collect_official_challenges():
+    """官方悬赏/RFP——NIH/XPRIZE/ARPA-H。Jina Reader 抓已知页面提取链接。
+    无时间窗口——悬赏没关就有效。"""
+    pages = [
+        ("NIH", "https://commonfund.nih.gov/challenges"),
+        ("XPRIZE", "https://www.xprize.org/prizes"),
+        ("ARPA-H", "https://arpa-h.gov/research-and-funding"),
+    ]
+    out = []
+    for name, url in pages:
+        try:
+            text = _jina_read(url)
+            for m in re.finditer(r'\[([^\]]{15,})\]\((https?://[^\)]+)\)', text):
+                title, link = m.group(1).strip(), m.group(2).strip()
+                out.append({
+                    "source": "official_challenges", "pillar_hint": "C1",
+                    "url": link, "text": f"[{name}] {title}", "lang": "en",
+                    "age_h": 0, "eng": 0,
+                })
+        except Exception as e:
+            print(f"  [challenges:{name}] ERR {e}")
+        time.sleep(1)
+    return out
+
+def collect_review_open_questions(now):
+    """综述的 open questions / limitations / future work——arXiv 搜 review 类论文。
+    窗口 30 天——综述出得少但价值密度最高。"""
+    import xml.etree.ElementTree as ET
+    NS = {"a": "http://www.w3.org/2005/Atom"}
+    queries = {
+        "ai-review": '(cat:cs.AI OR cat:cs.LG OR cat:cs.CL) AND (abs:"open question" OR abs:"open problem" OR abs:"unsolved" OR abs:"remaining challenge") AND (abs:review OR abs:survey)',
+        "bio-review": '(cat:q-bio OR cat:physics.bio-ph OR cat:cs.CE) AND (abs:"open question" OR abs:"unsolved" OR abs:"remaining challenge") AND (abs:review OR abs:survey)',
+    }
+    out = []
+    for label, q in queries.items():
+        try:
+            url = ("http://export.arxiv.org/api/query?search_query=" +
+                   urllib.parse.quote(q) +
+                   "&sortBy=submittedDate&sortOrder=descending&max_results=10")
+            req = urllib.request.Request(url, headers={"User-Agent": "content-machine/1.0"})
+            with urllib.request.urlopen(req, timeout=25) as r:
+                root = ET.fromstring(r.read().decode())
+        except Exception as e:
+            print(f"  [review:{label}] ERR {e}"); time.sleep(2); continue
+        for entry in root.findall("a:entry", NS):
+            title = (entry.findtext("a:title", "", NS) or "").strip().replace("\n", " ")
+            aid = (entry.findtext("a:id", "", NS) or "").strip()
+            pub = (entry.findtext("a:published", "", NS) or "").strip()
+            age = iso_age_h(pub.replace("Z", "+00:00"), now) if pub else None
+            if age is not None and age > 720:
+                continue
+            out.append({
+                "source": "review_open_questions", "pillar_hint": "C1",
+                "url": aid, "text": title, "lang": "en",
+                "age_h": round(age, 1) if age else 0, "eng": 0,
+            })
+        time.sleep(3)
     return out
 
 def main():
@@ -221,6 +316,10 @@ def main():
     cands += collect_hf()
     cands += collect_arxiv(now)
     cands += collect_rss(now)
+    print("collect: C1 专属源 (Metaculus + 官方悬赏 + 综述 open Qs) ...")
+    cands += collect_metaculus()
+    cands += collect_official_challenges()
+    cands += collect_review_open_questions(now)
     if not args.no_reddit:
         print("collect: Reddit via safe-social (u/Top_Shop_6167 read-only) ...")
         cands += collect_reddit(now)
