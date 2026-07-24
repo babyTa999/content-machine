@@ -47,9 +47,17 @@ PROMPT="$(cat "$PERSONA")
 
 $PASSED"
 
-if print -r -- "$PROMPT" | claude -p > "$JUDGED" 2>"$HERE/vault/.judge-err-$DATE.log"; then
+ERRLOG="$HERE/vault/.judge-err-$DATE.log"
+# ⚠️ claude -p 出错时可能把错误写进 stdout(→$JUDGED)而非 stderr、且可能仍 exit 0——
+#    所以不靠退出码，改校验 $JUDGED 是有效判官输出(非空 + 含 '#' 开头行 = # 月日/## 栏目)。
+#    `|| true` 防 set -e 在判官非0退出时直接杀脚本(粗筛结果得保住)。
+print -r -- "$PROMPT" | claude -p > "$JUDGED" 2>"$ERRLOG" || true
+if [ -s "$JUDGED" ] && grep -qm1 '^#' "$JUDGED"; then
   echo "done -> 粗筛 $OUT ｜ 判官 $JUDGED"
   echo "下一步：看 $JUDGED 的保留清单 → 挑 → 角度生成器 → 起草 → 狠编辑。"
 else
-  echo "⚠️ 判官调用失败（见 vault/.judge-err-$DATE.log，多半是 headless 登录态）。粗筛结果仍在 -> $OUT"
+  # 判官没产出有效结果：真错误可能在 stdout(已进 $JUDGED)也可能在 stderr($ERRLOG)——
+  # 把 $JUDGED 并进日志，避免"日志空、真错误在别处"的误导(codex 2026-07-24 指出)。
+  { echo "--- stdout（可能是 claude 把错误写这儿）---"; cat "$JUDGED" 2>/dev/null; } >> "$ERRLOG"
+  echo "⚠️ 判官失败/输出非判官格式。真错误见 $ERRLOG（已并入 stdout+stderr）。粗筛结果仍在 -> $OUT"
 fi
