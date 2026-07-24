@@ -57,6 +57,17 @@ def soft_score(c):
     if age <= 24: s += 2
     elif age <= 72: s += 1
     if c.get("source", "").startswith(("arxiv", "rss", "hf")): s += 1  # post 素材源略提
+    # 2026-07-24 (B) problem-first 结构信号：从业者求助帖是 problem-first 富矿。
+    # 真痛点是大白话、命中不了学术关键词库(col=?)、会沉到判官读不到的位置——
+    # 不靠领域词、靠"求助结构"识别并 +4 置顶。只认 [Q]/[R]（[D] 多是会议八卦，不加）。
+    if c.get("source") == "reddit":
+        tl = text.lower()
+        if (re.search(r"\b(help|how do|how to|how can|why (does|is|are)|error|"
+                      r"issue|stuck|struggl|not working|doesn'?t work|can'?t get|"
+                      r"cannot get|discrepancy|trouble|problem with|any idea|"
+                      r"anyone (know|else)|unexpected|weird)\b", tl)
+                or re.search(r"\[(q|r)\]", tl)):
+            s += 4
     return s
 
 def main():

@@ -104,3 +104,44 @@ exclude:
   - name: 法律AI幻觉判例(已写过)
     reason: AI 幻觉法律判例/法院 sanction Selene 已写过，别再当选题（2026-07-24）
     keywords: ["sanctioned", "fabricated citation", "fake citation", "law firm", "court fined", "bar association", "legal brief", "hallucinated case"]
+
+  - name: 职业/择校/学位/入门/会议行政(Reddit 噪音)
+    reason: >
+      Reddit 从业者版混大量非技术噪音——找工作/读研择校/学位/教材入门/会议投稿行政八卦，
+      全不是 ICP 技术痛点。用组合词精准拦(避免裸 review/confidence/learn/graduates 误伤真痛点)。2026-07-24 C。
+    keywords:
+      # 职业 / 择校 / 学位
+      - break into
+      - job prospects
+      - job opportunities
+      - job market
+      - career
+      - universities for
+      - grad school
+      - graduate school
+      - hiring managers
+      # 教材 / 入门 / 学习路径
+      - for beginner
+      - beginner level
+      - self-studying
+      - self study
+      - getting back into
+      - project ideas
+      - should i implement
+      - papers to implement
+      - want to learn
+      - need guidance
+      - practice problems
+      # 会议投稿行政 / 八卦（MachineLearning 版重灾区）
+      - openreview
+      - rebuttal
+      - meta review
+      - reviews are out
+      - reviews come out
+      - reviews just released
+      - refresh day
+      - paper reviews
+      - neurips review
+      - acm mm
+      - average rating
+      - average confidence
