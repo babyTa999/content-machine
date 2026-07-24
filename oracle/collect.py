@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
-"""collect.py — Oracle 采集层
-扫 sources.yml 里的源，产出候选 spike（原始，未打分）→ stdout / --out。
-全部复用现有工具：X 只走 safe-social（@kw90qk 只读），其余零配置 curl / agent-reach。
+"""collect.py — Oracle 采集层（2026-07-24 配置化：sources.yml 真驱动）
+读 config/sources.yml，对 status==auto 的源采集候选 spike → stdout / --out。
+每个源的参数（subs/queries/feeds/window/limit）来自 sources.yml，不再硬编码——
+改 sources.yml = 改采集行为。解析逻辑（RSS/Jina/arXiv XML）仍在 python。
+X 只走 safe-social（@kw90qk 只读）；其余 curl / Jina（免费）。
 用法：
-    python3 collect.py                 # 采集全部源，打印摘要
-    python3 collect.py --out raw.json  # 落盘
-依赖：/Users/admin/.agent-reach-venv/bin/python（含 safe-social 运行环境）
+    python3 collect.py --out raw.json
+    --no-x / --no-reddit 跳过对应源
+依赖：/Users/admin/.agent-reach-venv/bin/python（含 PyYAML + safe-social 环境）
 """
 import json, subprocess, time, datetime as dt, argparse, os, re, urllib.request, urllib.parse
+import xml.etree.ElementTree as ET
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 SAFE_SOCIAL = "/Users/admin/Apodex/内容/safe-social"
+UA = "Mozilla/5.0 content-machine/1.0"
+_LNAME = lambda el: el.tag.rsplit("}", 1)[-1]   # 去 XML 命名空间
 
 def load_yaml(path):
-    # 极简 yaml 读取，避免额外依赖；仅够读本 repo 的 config
-    import yaml  # PyYAML 常见可用；不可用时见 README 安装说明
+    import yaml
     return yaml.safe_load(open(path, encoding="utf-8"))
 
 def iso_age_h(iso, now):
@@ -25,31 +29,48 @@ def iso_age_h(iso, now):
     except Exception:
         return None
 
-# ---------- X watchlist（safe-social 只读） ----------
-def collect_x(watch_cfg, now):
-    out = []
-    handles = []
+def _get(url, timeout=20):
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode())
+
+def _fetch_xml(url, timeout=25):
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return ET.fromstring(r.read())
+
+def _jina_read(url, max_chars=8000):
+    req = urllib.request.Request(f"https://r.jina.ai/{url}",
+        headers={"User-Agent": "content-machine/1.0", "Accept": "text/plain"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return r.read().decode()[:max_chars]
+
+def _strip_html(s):
+    return re.sub(r"<[^>]+>", "", s or "").strip()
+
+# ---------- X watchlist（safe-social 只读；参数来自 sources.yml） ----------
+def collect_x(watch_cfg, now, cfg):
+    n = cfg.get("posts_per_handle", 10)
+    w_ind = cfg.get("window_h_individual", 48)
+    w_inst = cfg.get("window_h_institution", 168)
+    out, handles = [], []
     for tier, hs in watch_cfg["watchlist"].items():
         for h in hs:
             handles.append((tier, h, "C4"))
-    # 机构/journal 官号：科学新闻当 post 素材（pillar_hint=None 按内容分类，不强塞 C4）
-    for h in watch_cfg.get("institutions", []):
+    for h in watch_cfg.get("institutions", []):   # 机构官号：科学新闻当选题素材，不强塞 C4
         handles.append(("institution", h, None))
     for tier, h, hint in handles:
         try:
-            r = subprocess.run([SAFE_SOCIAL, "x", "user-posts", h, "-n", "10", "--json"],
+            r = subprocess.run([SAFE_SOCIAL, "x", "user-posts", h, "-n", str(n), "--json"],
                                capture_output=True, text=True, timeout=90)
             posts = (json.loads(r.stdout) or {}).get("data") or []
         except Exception as e:
-            print(f"  [x] {h}: ERR {e}")
-            time.sleep(1.2); continue
+            print(f"  [x] {h}: ERR {e}"); time.sleep(1.2); continue
         for p in posts:
-            if p.get("isRetweet"):
-                continue
+            if p.get("isRetweet"): continue
             age = iso_age_h(p.get("createdAtISO", ""), now)
-            max_age = 168 if tier == "institution" else 48
-            if age is None or age > max_age or age < 0:
-                continue
+            max_age = w_inst if tier == "institution" else w_ind
+            if age is None or age > max_age or age < 0: continue
             m = p.get("metrics") or {}
             eng = m.get("likes",0)+2*m.get("retweets",0)+2*m.get("quotes",0)+m.get("replies",0)
             out.append({
@@ -61,16 +82,10 @@ def collect_x(watch_cfg, now):
         time.sleep(1.2)
     return out
 
-# ---------- 零配置 API 源 ----------
-def _get(url, timeout=20):
-    req = urllib.request.Request(url, headers={"User-Agent": "content-machine/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode())
-
-def collect_hn():
-    out = []
+def collect_hn(cfg):
+    out, q, hits = [], cfg.get("query", "AI"), cfg.get("hits", 8)
     try:
-        d = _get("https://hn.algolia.com/api/v1/search?tags=front_page&query=AI&hitsPerPage=8")
+        d = _get(f"https://hn.algolia.com/api/v1/search?tags=front_page&query={urllib.parse.quote(q)}&hitsPerPage={hits}")
         for h in d.get("hits", []):
             out.append({
                 "source": "hackernews", "pillar_hint": None,
@@ -82,123 +97,105 @@ def collect_hn():
         print(f"  [hn] ERR {e}")
     return out
 
-def collect_arxiv(now):
-    """arXiv 多 query 采集——C1/C2 主供给。用 Atom 命名空间字典，避免全局 register 污染。"""
-    import xml.etree.ElementTree as ET
+def collect_arxiv(now, cfg):
+    """arXiv 多 query——存 title + summary 片段（judge 需要正文不只标题）。"""
     NS = {"a": "http://www.w3.org/2005/Atom"}
-    queries = {
-        "eval/verification": '(cat:cs.AI OR cat:cs.LG) AND (abs:verification OR abs:evaluation OR abs:benchmark OR abs:hallucination OR abs:calibration OR abs:reproducibility)',
-        "ai-for-science": 'abs:"AI for science" OR abs:"autonomous research" OR abs:"AI scientist" OR abs:"hypothesis generation" OR abs:"scientific discovery" OR abs:"deep research"',
-        "agents/reasoning": '(cat:cs.AI OR cat:cs.CL) AND (abs:"LLM agent" OR abs:"multi-agent" OR abs:reasoning OR abs:"self-improving")',
-        "forecasting": '(abs:forecasting OR abs:prediction) AND (abs:uncertainty OR abs:calibration OR abs:probability)',
-        # C2 供给：幻觉/可靠性/事实性（反 AI 幻觉的 post 弹药）
-        "hallucination/reliability": '(cat:cs.CL OR cat:cs.AI) AND (abs:hallucination OR abs:"factual error" OR abs:faithfulness OR abs:"unreliable" OR abs:"misleading" OR abs:"citation" OR abs:"fact verification")',
-        # C1 A4Science instance 供给：药物/蛋白/材料/基因组 发现 AI
-        "biomed/materials-discovery": '(abs:"drug discovery" OR abs:"protein design" OR abs:"materials discovery" OR abs:"molecular design" OR abs:"genomic") AND (abs:"machine learning" OR abs:model OR abs:agent)',
-    }
+    queries = cfg.get("queries", {}) or {}
+    window, mx = cfg.get("window_h", 168), cfg.get("max_results", 10)
     out = []
     for label, q in queries.items():
         try:
-            url = ("http://export.arxiv.org/api/query?search_query=" +
-                   urllib.parse.quote(q) +
-                   "&sortBy=submittedDate&sortOrder=descending&max_results=10")
-            req = urllib.request.Request(url, headers={"User-Agent": "content-machine/1.0"})
-            with urllib.request.urlopen(req, timeout=25) as r:
-                root = ET.fromstring(r.read().decode())
+            url = ("http://export.arxiv.org/api/query?search_query=" + urllib.parse.quote(q) +
+                   f"&sortBy=submittedDate&sortOrder=descending&max_results={mx}")
+            root = _fetch_xml(url)
         except Exception as e:
             print(f"  [arxiv:{label}] ERR {e}"); time.sleep(2); continue
         for e in root.findall("a:entry", NS):
             title = (e.findtext("a:title", "", NS) or "").strip().replace("\n", " ")
+            summ = (e.findtext("a:summary", "", NS) or "").strip().replace("\n", " ")
             aid = (e.findtext("a:id", "", NS) or "").strip()
             pub = (e.findtext("a:published", "", NS) or "").strip()
             age = iso_age_h(pub.replace("Z", "+00:00"), now) if pub else None
-            if age is None or age > 168:  # 只要一周内
-                continue
+            if age is None or age > window: continue
+            text = title if not summ else f"{title} — {summ}"
             out.append({
                 "source": "arxiv", "pillar_hint": None, "arxiv_q": label,
-                "url": aid, "text": title, "lang": "en",
-                "age_h": round(age, 1), "eng": 0,
+                "url": aid, "text": text[:600], "lang": "en", "age_h": round(age, 1), "eng": 0,
             })
         time.sleep(3)  # arXiv 礼貌间隔
     return out
 
-def collect_rss(now):
-    """Journal RSS——喂"今日能发"的 bio/science 源（Selene 2026-07-24 加）。"""
-    import xml.etree.ElementTree as ET
-    feeds = {
-        "Nature": "https://www.nature.com/nature.rss",
-        "NatureComms": "https://www.nature.com/ncomms.rss",
-        "Science": "https://www.science.org/rss/news_current.xml",
-        "RetractionWatch": "https://retractionwatch.com/feed/",   # ② AI 编造/撤稿真实案例
-    }
-    lname = lambda el: el.tag.rsplit("}", 1)[-1]  # 去命名空间
+def collect_rss(now, cfg):
+    """Journal RSS（含 Retraction Watch）——存 title + description 片段。"""
+    feeds, lim = cfg.get("feeds", {}) or {}, cfg.get("limit_per_feed", 15)
     out = []
     for name, url in feeds.items():
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 content-machine/1.0"})
-            with urllib.request.urlopen(req, timeout=25) as r:
-                root = ET.fromstring(r.read())
+            root = _fetch_xml(url)
         except Exception as e:
             print(f"  [rss:{name}] ERR {e}"); continue
-        items = [el for el in root.iter() if lname(el) in ("item", "entry")]  # RSS1.0/2.0/Atom 通吃
-        for it in items[:15]:
-            title, link = "", ""
+        items = [el for el in root.iter() if _LNAME(el) in ("item", "entry")]  # RSS1.0/2.0/Atom 通吃
+        for it in items[:lim]:
+            title, link, desc = "", "", ""
             for ch in it:
-                ln = lname(ch)
+                ln = _LNAME(ch)
                 if ln == "title" and ch.text: title = ch.text.strip()
-                elif ln == "link":
-                    link = (ch.get("href") or ch.text or "").strip()  # Atom href / RSS text
+                elif ln == "link": link = (ch.get("href") or ch.text or "").strip()
+                elif ln in ("description", "summary") and ch.text: desc = _strip_html(ch.text)[:200]
             if title and link:
+                text = title if not desc else f"{title} — {desc}"
                 out.append({
                     "source": f"rss:{name}", "pillar_hint": None,
-                    "url": link, "text": title, "lang": "en", "age_h": 0, "eng": 0,
+                    "url": link, "text": text[:500], "lang": "en", "age_h": 0, "eng": 0,
                 })
     return out
 
-def collect_hf():
-    out = []
+def collect_hf(cfg):
+    out, lim = [], cfg.get("limit", 8)
     try:
-        d = _get("https://huggingface.co/api/daily_papers?limit=8")
+        d = _get(f"https://huggingface.co/api/daily_papers?limit={lim}")
         for p in d:
             pa = p.get("paper", {})
+            title = pa.get("title","")
+            summ = (pa.get("summary") or "").strip().replace("\n"," ")
+            text = title if not summ else f"{title} — {summ}"
             out.append({
-                # 不给 blanket hint：hint=None 交给判官语义判栏目（不再有关键词 gate）
                 "source": "hf_papers", "pillar_hint": None,
                 "url": f"https://arxiv.org/abs/{pa.get('id')}",
-                "text": pa.get("title",""), "lang": "en",
+                "text": text[:600], "lang": "en",
                 "upvotes": pa.get("upvotes",0), "age_h": 0, "eng": pa.get("upvotes",0),
             })
     except Exception as e:
         print(f"  [hf] ERR {e}")
     return out
 
-def collect_reddit(now, subs=("bioinformatics", "computationalbiology", "chemistry",
-                              "statistics", "MLQuestions", "datascience", "MachineLearning")):
-    """Reddit via safe-social（u/Top_Shop_6167 只读）——从业者问痛(①)供给。
-    子版已 agent-reach 调研锁定 2026-07-24：只取有 S.O.S./Help/[Q]/[R] 求助文化的技术版。
-    窗口 7 天——痛点帖是常青选题种子，不是新闻。"""
+def collect_reddit(now, cfg):
+    """Reddit via safe-social（只读）——从业者问痛(①)。subs 分 ICP 组，帖子带 icp_hint（比关键词准）。"""
+    window, lim = cfg.get("window_h", 168), cfg.get("limit_per_sub", 15)
+    subs_cfg = cfg.get("subs", {})
+    pairs = []
+    if isinstance(subs_cfg, dict):                 # 分组 {ICP: [subs]}
+        for icp, subs in subs_cfg.items():
+            for s in (subs or []): pairs.append((s, icp))
+    else:                                          # 平铺 [subs]
+        for s in (subs_cfg or []): pairs.append((s, None))
     out = []
-    for sub in subs:
+    for sub, icp in pairs:
         try:
-            r = subprocess.run([SAFE_SOCIAL, "reddit", "sub", sub, "--limit", "15", "--json"],
+            r = subprocess.run([SAFE_SOCIAL, "reddit", "sub", sub, "--limit", str(lim), "--json"],
                                capture_output=True, text=True, timeout=90)
             children = (((json.loads(r.stdout) or {}).get("data") or {}).get("data") or {}).get("children") or []
         except Exception as e:
             print(f"  [reddit:{sub}] ERR {e}"); time.sleep(1.5); continue
         for ch in children:
             p = ch.get("data") or {}
-            if p.get("stickied"):
-                continue
+            if p.get("stickied"): continue
             created = p.get("created_utc")
-            age = None
-            if created:
-                age = (now.timestamp() - float(created)) / 3600
-            if age is not None and age > 168:
-                continue
-            title = p.get("title", "")
-            body = (p.get("selftext") or "")[:200]
+            age = (now.timestamp() - float(created)) / 3600 if created else None
+            if age is not None and age > window: continue
+            title, body = p.get("title", ""), (p.get("selftext") or "")[:300]
             out.append({
-                "source": "reddit", "pillar_hint": None, "sub": sub,
+                "source": "reddit", "pillar_hint": None, "sub": sub, "icp_hint": icp,
                 "url": "https://reddit.com" + (p.get("permalink") or ""),
                 "text": (title + " " + body).strip()[:500], "lang": "en",
                 "age_h": round(age, 1) if age is not None else 0,
@@ -207,111 +204,70 @@ def collect_reddit(now, subs=("bioinformatics", "computationalbiology", "chemist
         time.sleep(1.2)
     return out
 
-# ---------- C1 staged → auto（2026-07-24 接入） ----------
-
-def _jina_read(url, max_chars=5000):
-    """Jina Reader 免费——URL → clean markdown。"""
-    req = urllib.request.Request(
-        f"https://r.jina.ai/{url}",
-        headers={"User-Agent": "content-machine/1.0", "Accept": "text/plain"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return r.read().decode()[:max_chars]
-
-def collect_metaculus():
-    """Metaculus 预测题库——C1 预测切面供给。
-    REST API 已 403（2026-07），改 Jina Reader 抓搜索页（#### [title](url) 格式）。"""
-    url = ("https://www.metaculus.com/questions/"
-           "?order_by=-activity&status=open"
-           "&search=AI+science+drug+protein+climate+biology")
-    out = []
+def collect_metaculus(cfg):
+    """Metaculus 预测题——Jina 抓搜索页 #### [title](url)（REST API 已 403）。"""
+    url, out = cfg.get("url"), []
+    if not url: return out
     try:
         text = _jina_read(url, max_chars=8000)
         for m in re.finditer(r'####\s*\[([^\]]{15,})\]\((https://www\.metaculus\.com/questions/\d+/[^\)#]+)\)', text):
-            title, link = m.group(1).strip(), m.group(2).strip()
             out.append({
                 "source": "prediction_banks", "pillar_hint": "C1",
-                "url": link, "text": title, "lang": "en",
-                "age_h": 0, "eng": 0,
+                "url": m.group(2).strip(), "text": m.group(1).strip(), "lang": "en", "age_h": 0, "eng": 0,
             })
     except Exception as e:
         print(f"  [metaculus] ERR {e}")
     return out
 
-def collect_official_challenges():
-    """官方悬赏/RFP——NIH/XPRIZE/ARPA-H。Jina Reader 抓已知页面提取链接。
-    无时间窗口——悬赏没关就有效。"""
-    pages = [
-        ("USAgov", "https://www.usa.gov/find-active-challenge"),
-        ("XPRIZE", "https://www.xprize.org/prizes"),
-        ("ARPA-H", "https://arpa-h.gov/research-and-funding"),
-    ]
-    out = []
-    for name, url in pages:
+def collect_official_challenges(cfg):
+    """官方悬赏——Jina 抓页链接 + 路径过滤（过滤规则硬编码，pages 配置化）。"""
+    pages, out = cfg.get("pages", {}) or {}, []
+    for name, url in pages.items():
         try:
             text = _jina_read(url)
             for m in re.finditer(r'\[([^\]]{15,})\]\((https?://[^\)]+)\)', text):
                 title, link = m.group(1).strip(), m.group(2).strip()
-                if link.endswith(('.svg', '.png', '.jpg')):
-                    continue
-                if 'usa.gov' in link and not re.search(r'/challenges/[a-z]', link):
-                    continue
-                if 'xprize.org' in link and not re.search(r'/competitions/[a-z]', link):
-                    continue
-                if 'arpa-h.gov' in link and '/programs/' not in link and '/open-funding' not in link:
-                    continue
+                if link.endswith(('.svg', '.png', '.jpg')): continue
+                if 'usa.gov' in link and not re.search(r'/challenges/[a-z]', link): continue
+                if 'xprize.org' in link and not re.search(r'/competitions/[a-z]', link): continue
+                if 'arpa-h.gov' in link and '/programs/' not in link and '/open-funding' not in link: continue
                 out.append({
                     "source": "official_challenges", "pillar_hint": "C1",
-                    "url": link, "text": f"[{name}] {title}", "lang": "en",
-                    "age_h": 0, "eng": 0,
+                    "url": link, "text": f"[{name}] {title}", "lang": "en", "age_h": 0, "eng": 0,
                 })
         except Exception as e:
             print(f"  [challenges:{name}] ERR {e}")
         time.sleep(1)
     return out
 
-def collect_ai_incidents():
-    """② verification 事件源——AI 在 science/deeptech 领域闯祸的真实新闻事件。
-    Google News RSS（免费无 key；s.jina.ai/Exa 已需 key）。
-    ⚠️ ICP 镜头：只找 science lab / deeptech 会痛的（科研造假/假citation/bio模型/deep research/
-    benchmark），不是 AI 客服/消费产品翻车那类通用噪音。借 newsjack Detect 思路但镜头锚我们 ICP；
-    新鲜度放松（好案例新旧都行）；coarse 相关性 + ICP 闸交判官（见 选题judge-X ②判据）。"""
-    import xml.etree.ElementTree as ET
-    queries = [
-        "AI fabricated research data retraction",
-        "AI hallucinated citation scientific paper",
-        "deep research AI unreliable wrong conclusion",
-        "AI benchmark data leakage flawed evaluation",
-        "AI drug discovery materials prediction wrong",
-    ]
-    lname = lambda el: el.tag.rsplit("}", 1)[-1]
+def collect_ai_incidents(cfg):
+    """② 事件源——Google News RSS（ICP 镜头 science/deeptech）。存 title + description。
+    ⚠️ 只锚科研/deeptech 的 AI 闯祸；判官 ICP 闸砍客服/消费噪音。"""
+    queries, per = cfg.get("queries", []) or [], cfg.get("per_query", 8)
     out, seen = [], set()
     for q in queries:
         try:
-            url = ("https://news.google.com/rss/search?q=" +
-                   urllib.parse.quote(q) + "&hl=en-US&gl=US&ceid=US:en")
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 content-machine/1.0"})
-            with urllib.request.urlopen(req, timeout=25) as r:
-                root = ET.fromstring(r.read())
+            url = "https://news.google.com/rss/search?q=" + urllib.parse.quote(q) + "&hl=en-US&gl=US&ceid=US:en"
+            root = _fetch_xml(url)
         except Exception as e:
             print(f"  [ai_incident:{q[:22]}] ERR {e}"); time.sleep(1.5); continue
-        items = [el for el in root.iter() if lname(el) == "item"]
-        for it in items[:8]:
-            title, link = "", ""
+        items = [el for el in root.iter() if _LNAME(el) == "item"]
+        for it in items[:per]:
+            title, link, desc = "", "", ""
             for ch in it:
-                ln = lname(ch)
+                ln = _LNAME(ch)
                 if ln == "title" and ch.text: title = ch.text.strip()
                 elif ln == "link" and ch.text: link = ch.text.strip()
-            if not title or not link or title.endswith("- Google News") or title in seen:
-                continue
+                elif ln == "description" and ch.text: desc = _strip_html(ch.text)[:180]
+            if not title or not link or title.endswith("- Google News") or title in seen: continue
             seen.add(title)
-            # pillar_hint=None：判官按标题语义判 ②（query 已锚 ICP，命中多为 ② 事件）
+            text = title if not desc else f"{title} — {desc}"
             out.append({
                 "source": "ai_incident", "pillar_hint": None,
-                "url": link, "text": title, "lang": "en", "age_h": 0, "eng": 0,
+                "url": link, "text": text[:500], "lang": "en", "age_h": 0, "eng": 0,
             })
         time.sleep(1.5)  # 礼貌间隔
     return out
-
 
 def main():
     ap = argparse.ArgumentParser()
@@ -321,41 +277,44 @@ def main():
     args = ap.parse_args()
 
     now = dt.datetime.now(dt.timezone.utc)
+    src = load_yaml(os.path.join(REPO, "config", "sources.yml"))
     watch = load_yaml(os.path.join(REPO, "config", "watchlist.yml"))
+    def cfg(name): return src.get(name) or {}
+    def on(name): return cfg(name).get("status") == "auto"
 
     cands = []
-    print("collect: HN + HF papers + arXiv (multi-query) ...")
-    cands += collect_hn()
-    cands += collect_hf()
-    cands += collect_arxiv(now)
-    cands += collect_rss(now)
-    print("collect: C1 专属源 (Metaculus + 官方悬赏) ...")
-    cands += collect_metaculus()
-    cands += collect_official_challenges()
-    print("collect: ② AI 闯祸事件 (Google News RSS, ICP 镜头 science/deeptech) ...")
-    cands += collect_ai_incidents()
-    if not args.no_reddit:
-        print("collect: Reddit via safe-social (u/Top_Shop_6167 read-only) ...")
-        cands += collect_reddit(now)
-    if not args.no_x:
-        print("collect: X watchlist via safe-social (@kw90qk read-only) ...")
-        cands += collect_x(watch, now)
+    if on("hackernews"): cands += collect_hn(cfg("hackernews"))
+    if on("hf_papers"): cands += collect_hf(cfg("hf_papers"))
+    if on("arxiv"):
+        print("collect: arxiv (multi-query) ..."); cands += collect_arxiv(now, cfg("arxiv"))
+    if on("journal_rss"): cands += collect_rss(now, cfg("journal_rss"))
+    if on("prediction_banks") or on("official_challenges"):
+        print("collect: C1 专属 (Metaculus + 悬赏) ...")
+        if on("prediction_banks"): cands += collect_metaculus(cfg("prediction_banks"))
+        if on("official_challenges"): cands += collect_official_challenges(cfg("official_challenges"))
+    if on("ai_incident_db"):
+        print("collect: ② AI 闯祸事件 (Google News, ICP 镜头) ...")
+        cands += collect_ai_incidents(cfg("ai_incident_db"))
+    if on("practitioner_pain_reddit") and not args.no_reddit:
+        print("collect: Reddit (safe-social 只读) ...")
+        cands += collect_reddit(now, cfg("practitioner_pain_reddit"))
+    if on("x_watchlist") and not args.no_x:
+        print("collect: X watchlist (safe-social 只读) ...")
+        cands += collect_x(watch, now, cfg("x_watchlist"))
+    # 注：x_keyword_search status=staged 且无 collector → 自动不采（配置层真跳过）
 
-    # 去重：按归一化 URL（arXiv 抹掉 abs/pdf/export 差异 + 版本号 vN）
+    # 去重：归一化 URL（arXiv 抹 abs/pdf/版本号差异）
     def norm(u):
         u = (u or "").lower().split("://")[-1].rstrip("/")
         m = re.search(r"arxiv\.org/(?:abs|pdf)/(\d{4}\.\d+)", u)
-        if m: return "arxiv:" + m.group(1)
-        return u
+        return "arxiv:" + m.group(1) if m else u
     seen, deduped = set(), []
     for c in cands:
         k = norm(c.get("url"))
         if k in seen: continue
         seen.add(k); deduped.append(c)
-    dropped = len(cands) - len(deduped)
-    cands = deduped
-    payload = {"collected_at": now.isoformat(), "count": len(cands),
-               "deduped": dropped, "candidates": cands}
+    dropped = len(cands) - len(deduped); cands = deduped
+    payload = {"collected_at": now.isoformat(), "count": len(cands), "deduped": dropped, "candidates": cands}
     print(f"dedup: 去重 {dropped} 条")
     if args.out:
         json.dump(payload, open(args.out, "w"), ensure_ascii=False, indent=1)

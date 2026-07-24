@@ -86,7 +86,7 @@ def main():
         if why:
             excluded.append({**c, "reject": why}); continue
         c["col"] = col_hint(c.get("text"), c.get("pillar_hint"), cfg)
-        c["icp"] = icp_tag(c.get("text"), cfg)
+        c["icp"] = c.get("icp_hint") or icp_tag(c.get("text"), cfg)  # collect 给的 icp_hint(reddit分组)比关键词准
         c["s"] = 0; c["s"] = soft_score(c)
         survivors.append(c)
     survivors.sort(key=lambda x: -x["s"])
@@ -97,7 +97,7 @@ def main():
           f"\n## 📥 送判官候选（{len(survivors)}）\n"]
     for c in survivors:
         tag = f"[{c['col']}·{c['icp']}·s{c['s']}]"
-        md.append(f"- {tag} `{c['source']}` {c.get('handle','')} — {(c.get('text') or '')[:180].strip()}")
+        md.append(f"- {tag} `{c['source']}` {c.get('handle','')} — {(c.get('text') or '')[:420].strip()}")
         md.append(f"  - {c['url']}")
     md.append(f"\n## 🗑️ 硬剔除（{len(excluded)}）\n")
     for c in excluded:
