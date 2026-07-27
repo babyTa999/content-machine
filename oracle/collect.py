@@ -423,13 +423,24 @@ def _flatten_queries(groups: Any) -> list[tuple[str, str]]:
     return [("default", str(query)) for query in groups or []]
 
 
+def _editorial_intent_queries() -> list[tuple[str, str]]:
+    configured = load_yaml(REPO / "config" / "editorial_intents.yml")
+    queries: list[tuple[str, str]] = []
+    for intent_id, definition in (configured.get("intents") or {}).items():
+        if definition.get("status") != "active":
+            continue
+        for query in ((definition.get("retrieval") or {}).get("x_queries") or []):
+            queries.append((str(intent_id), str(query)))
+    return queries
+
+
 def collect_x_search(now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     interval = float(cfg.get("request_interval_s", 2.0))
     lang = str(cfg.get("lang", "en"))
     excluded = [str(item) for item in cfg.get("exclude") or []]
-    queries = _flatten_queries(cfg.get("queries"))
-    run_limit = min(int(cfg.get("query_groups_per_run", len(queries))), len(queries))
+    queries = _editorial_intent_queries()
+    run_limit = min(int(cfg.get("intent_groups_per_run", len(queries))), len(queries))
     start = now.date().toordinal() % len(queries) if queries else 0
     selected = [queries[(start + offset) % len(queries)] for offset in range(run_limit)]
     for group, query in selected:
@@ -448,7 +459,7 @@ def collect_x_search(now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str, An
                         source_path=f"x_query_{str(mode).lower()}",
                         now=now,
                         source_mode=str(mode),
-                        provenance={"query_group": group, "query": query},
+                        provenance={"editorial_intent_id": group, "query": query},
                         window_h=int(mode_cfg.get("window_h", 168)),
                         min_engagement=int(mode_cfg.get("min_engagement", 0)),
                     )
@@ -926,6 +937,120 @@ def merge_signals(signals: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], 
     return list(merged.values()), len(signals) - len(merged)
 
 
+_EVENT_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "been", "by", "for", "from",
+    "has", "have", "in", "into", "is", "it", "its", "new", "of", "on", "or",
+    "says", "that", "the", "their", "this", "to", "was", "were", "will", "with",
+}
+
+
+def _event_tokens(signal: dict[str, Any]) -> set[str]:
+    basis = str(signal.get("title") or "").strip()
+    if not basis:
+        basis = str(signal.get("text") or "").splitlines()[0][:260]
+    return {
+        token
+        for token in re.findall(r"[a-z0-9][a-z0-9_-]+", basis.lower())
+        if token not in _EVENT_STOPWORDS and len(token) > 2
+    }
+
+
+def _same_event(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if left.get("canonical_url") and left.get("canonical_url") == right.get("canonical_url"):
+        return True
+    left_tokens, right_tokens = _event_tokens(left), _event_tokens(right)
+    if min(len(left_tokens), len(right_tokens)) < 4:
+        return False
+    overlap = len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+    left_time = _parse_datetime(left.get("published_at"))
+    right_time = _parse_datetime(right.get("published_at"))
+    close_in_time = not left_time or not right_time or abs((left_time - right_time).total_seconds()) <= 7 * 86400
+    return close_in_time and overlap >= 0.55
+
+
+def build_canonical_events(signals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Cluster source mentions before editorial judging.
+
+    This intentionally uses a conservative deterministic threshold. The Judge
+    sees one event with all mentions, not several posts pretending to be
+    separate story ideas.
+    """
+    clusters: list[list[dict[str, Any]]] = []
+    for signal in signals:
+        target = next(
+            (cluster for cluster in clusters if any(_same_event(signal, item) for item in cluster)),
+            None,
+        )
+        if target is None:
+            clusters.append([signal])
+        else:
+            target.append(signal)
+    events: list[dict[str, Any]] = []
+    for cluster in clusters:
+        role_rank = {
+            "official_record": 8,
+            "institutional_update": 7,
+            "primary_report": 6,
+            "expert_primary_link": 5,
+            "reputable_news_lead": 3,
+            "community_case_lead": 2,
+            "paper_abstract_only": 1,
+            "anonymous_opinion": 0,
+            "discovery": 0,
+        }
+        primary = max(
+            cluster,
+            key=lambda item: (
+                role_rank.get(str(item.get("source_role") or "discovery"), 0),
+                bool((item.get("authority") or {}).get("institution")),
+                bool((item.get("authority") or {}).get("verified")),
+                len(str(item.get("text") or "")),
+                int(item.get("engagement") or 0),
+            ),
+        )
+        signatures = sorted(
+            " ".join(sorted(_event_tokens(item))) or item["candidate_id"] for item in cluster
+        )
+        dates = sorted(
+            str(item.get("published_at") or "")[:10]
+            for item in cluster
+            if item.get("published_at")
+        )
+        event_basis = f"{signatures[0]}:{dates[0] if dates else 'undated'}"
+        event_id = "evt_" + hashlib.sha256(event_basis.encode()).hexdigest()[:16]
+        event = dict(primary)
+        event["primary_mention_id"] = primary["candidate_id"]
+        event["candidate_id"] = event_id
+        event["canonical_event_id"] = event_id
+        event["story_key"] = event_id.removeprefix("evt_")
+        event["object_type"] = "canonical_event"
+        event["event_summary"] = primary.get("title") or str(primary.get("text") or "")[:280]
+        event["mention_count"] = len(cluster)
+        event["mentions"] = [
+            {
+                "mention_id": item["candidate_id"],
+                "platform": item.get("platform"),
+                "url": item.get("url"),
+                "title": item.get("title"),
+                "author": item.get("author"),
+                "published_at": item.get("published_at"),
+                "source_role": item.get("source_role"),
+            }
+            for item in cluster
+        ]
+        event["discovery_paths"] = sorted(
+            {path for item in cluster for path in item.get("discovery_paths") or []}
+        )
+        event["provenance"] = [
+            provenance
+            for item in cluster
+            for provenance in item.get("provenance") or []
+            if provenance
+        ]
+        events.append(event)
+    return events
+
+
 def collect(args: argparse.Namespace) -> dict[str, Any]:
     now = dt.datetime.now(dt.timezone.utc)
     sources = load_yaml(REPO / "config" / "sources.yml")
@@ -945,7 +1070,7 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
                 print("collect: X path 1/4 watchlist ...")
                 signals.extend(collect_x_watchlist(watch, now, sources["x_watchlist"]))
             if enabled("x_keyword_search"):
-                print("collect: X path 2/4 problem-shape queries (Top + Latest) ...")
+                print("collect: X path 2/4 editorial-intent event queries (Top + Latest) ...")
                 signals.extend(collect_x_search(now, sources["x_keyword_search"]))
             if enabled("x_conversation_graph"):
                 print("collect: X path 3/4 conversation graph ...")
@@ -986,14 +1111,18 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
         SOURCE_HEALTH.update(base.get("source_health") or {})
         SOURCE_HEALTH.update(current_health)
 
-    candidates, dropped = merge_signals(signals)
+    mentions, dropped = merge_signals(signals)
+    candidates = build_canonical_events(mentions)
     platform_counts = Counter(item["platform"] for item in candidates)
     path_counts = Counter(path for item in candidates for path in item["discovery_paths"])
     payload = {
-        "schema_version": 3,
+        "schema_version": 4,
+        "object_type": "canonical_event_collection",
         "collected_at": now.isoformat(),
         "count": len(candidates),
         "deduped_in_run": dropped,
+        "mentions_collected": len(mentions),
+        "events_built": len(candidates),
         "platform_counts": dict(platform_counts),
         "path_counts": dict(path_counts),
         "source_health": SOURCE_HEALTH,
@@ -1059,7 +1188,7 @@ def enrich(args: argparse.Namespace) -> dict[str, Any]:
         enriched.append(candidate)
 
     payload = {
-        "schema_version": 3,
+        "schema_version": 4,
         "run_id": queue.get("run_id"),
         "enriched_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "count": len(enriched),

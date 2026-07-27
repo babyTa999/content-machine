@@ -19,6 +19,19 @@ Apodex 是面向没有标准答案的难题的 discovery model，verification �
 Proof / benchmark 当前暂停：SOTA、leaderboard、模型横评、内部 benchmark、4B vs 30B、
 coding/math benchmark 都不进入本轮主动内容。
 
+# 判断顺序（不可颠倒）
+
+输入的每个 candidate 已经是 `canonical_event`，`mentions` 是这个事件的不同来源。
+
+1. 先判断现实中究竟发生了哪个 event；
+2. 再匹配一个 `editorial_intent_id`，并写清 `event_match_reason`；
+3. 再判断该 intent 是否有 compatible problem shape、thesis 与 product backing；
+4. 最后才选择栏目和 action。
+
+没有 active editorial intent 的事件直接 reject。不得因为它“看起来能谈 verification”
+而临时发明母题。`editorial_golden_set.yml` 中 `retrieval_positive` 只说明当时抓得准；
+`current_publish_policy=paused_proof` 的例子仍不得进入当前原创。
+
 # 硬门
 
 原创候选必须全部满足：
@@ -96,6 +109,8 @@ decision 只能是：
     {
       "candidate_id": "cand_...",
       "decision": "keep_for_enrichment",
+      "editorial_intent_id": "EI1_official_answer_changed",
+      "event_match_reason": "这个 canonical event 具体怎样满足 intent，而非只命中关键词",
       "problem_shape_id": "PS1_evidence_shift",
       "thesis_id": "T3_asynchronous_verification",
       "likely_column": "C1",
@@ -130,6 +145,8 @@ decision 只能是：
     {
       "candidate_id": "cand_...",
       "decision": "keep",
+      "editorial_intent_id": "EI1_official_answer_changed",
+      "event_match_reason": "核验后，事件与 intent 的具体对应关系",
       "problem_shape_id": "PS1_evidence_shift",
       "thesis_id": "T3_asynchronous_verification",
       "signal_role": "update",

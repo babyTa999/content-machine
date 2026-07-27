@@ -1,0 +1,84 @@
+schema_version: 1
+
+# 外部材料只匹配这些已拥有的母题，不能自行创造 Apodex 叙事。
+intents:
+  EI1_official_answer_changed:
+    name: "正式答案因新证据发生变化"
+    status: active
+    columns: [C1, C3]
+    problem_shapes: [PS1_evidence_shift, PS6_moving_target, PS8_auditable_conclusion]
+    theses: [T3_asynchronous_verification, T6_auditable_history, T8_search_judgment_loop]
+    event_triggers: [issued, revised, withdrew, reopened, overturned, warning added, warning removed, updated guidance, label change]
+    source_types: [regulator, standards_body, court, scientific_institution, company_primary_record]
+    product_backing: [website, technical_report]
+    positive_examples: ["监管者因新安全信息修改警示、标签或正式建议", "权威机构公开撤回、修订或重新开启既有结论"]
+    negative_examples: ["只发表了一篇新论文，没有改变现实中的正式判断", "泛泛讨论 AI 会犯错或需要 verification"]
+    retrieval:
+      x_queries:
+        - '("revised guidance" OR "withdrew guidance" OR "reopened review" OR "label change")'
+        - '("warning added" OR "warning removed" OR "updated official assessment")'
+
+  EI2_authorities_disagree_on_action:
+    name: "可信机构对同一现实决策给出不同答案"
+    status: active
+    columns: [C1]
+    problem_shapes: [PS2_credible_conflict, PS3_conditional_decision]
+    theses: [T2_independent_verification, T4_evidence_graph, T5_source_diversity]
+    event_triggers: [rejected, disputed, split vote, conflicting recommendations, opposed, reversed decision]
+    source_types: [regulator, advisory_committee, standards_body, court, scientific_institution]
+    product_backing: [website, technical_report]
+    positive_examples: ["两个可核验的权威主体对同一治疗、政策或标准给出冲突行动建议", "委员会表决与工作人员审查结论发生可解释的分歧"]
+    negative_examples: ["学者之间的抽象观点争论", "两篇论文结果不一致但没有现实决策或后果"]
+    retrieval:
+      x_queries:
+        - '("split vote" OR "rejected the recommendation" OR "disputed the finding")'
+        - '("conflicting recommendations" OR "reversed the decision") (agency OR committee OR court)'
+
+  EI3_open_decision_window:
+    name: "答案仍在形成，外部证据现在可以改变它"
+    status: active
+    columns: [C3]
+    problem_shapes: [PS5_definition_boundary, PS6_moving_target]
+    theses: [T3_asynchronous_verification, T6_auditable_history]
+    event_triggers: [proposed rule, draft guidance, request for comment, call for evidence, public consultation, advisory committee, comment deadline]
+    source_types: [regulator, standards_body, legislature, scientific_funder, public_agency]
+    product_backing: [website, technical_report]
+    positive_examples: ["仍开放的正式征求意见、证据征集或拟议规则", "明确给出截止日期且结论尚未定稿的公共决策"]
+    negative_examples: ["已经结束、没有现实参与窗口的旧 consultation", "活动预告或普通 conference call for papers"]
+    retrieval:
+      x_queries:
+        - '("request for comment" OR "call for evidence" OR "public consultation")'
+        - '("proposed rule" OR "draft guidance") (deadline OR comments OR hearing)'
+
+  EI4_many_judgments_one_decision:
+    name: "多个有偏判断怎样汇聚成更可靠的决策"
+    status: active
+    columns: [C1, C2]
+    problem_shapes: [PS3_conditional_decision, PS4_fragmented_record, PS7_branching_investigation]
+    theses: [T1_single_pass_ceiling, T4_evidence_graph, T7_agent_level_scaling]
+    event_triggers: [forecast aggregation, expert elicitation, ensemble decision, collective forecast, decision tournament, crowd forecast]
+    source_types: [primary_research, forecasting_institution, public_agency, scientific_institution]
+    product_backing: [technical_report]
+    positive_examples: ["真实项目展示多个有偏预测经过聚合后优于依赖单一判断", "系统设计改变了独立判断的汇聚、挑战或加权方式"]
+    negative_examples: ["纯模型 ensemble benchmark", "没有现实决策含义的算法精度提升"]
+    retrieval:
+      x_queries:
+        - '("forecast aggregation" OR "expert elicitation" OR "collective forecast") (study OR project)'
+        - '("decision tournament" OR "crowd forecast") (accuracy OR calibration OR outcome)'
+
+  EI5_fragmented_record_changes_case:
+    name: "分散记录拼在一起后，案件或调查的含义改变"
+    status: active
+    columns: [C1]
+    problem_shapes: [PS4_fragmented_record, PS7_branching_investigation, PS9_source_collapse]
+    theses: [T1_single_pass_ceiling, T4_evidence_graph, T5_source_diversity, T8_search_judgment_loop]
+    event_triggers: [investigation found, records revealed, newly disclosed, documents show, across jurisdictions, multiple registries, unreported case]
+    source_types: [official_record, investigative_report, court_record, registry, scientific_institution]
+    product_backing: [website, technical_report]
+    positive_examples: ["多个独立记录或辖区拼接后揭示此前未公开的重要事实", "调查需要跨来源追踪支持、冲突与缺失证据"]
+    negative_examples: ["单一新闻稿被多家媒体重复转载", "只总结一篇论文或一份报告"]
+    retrieval:
+      x_queries:
+        - '("newly disclosed" OR "records revealed" OR "documents show") (investigation OR case)'
+        - '("unreported case" OR "across jurisdictions" OR "multiple registries")'
+

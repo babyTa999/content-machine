@@ -55,7 +55,7 @@ x_watchlist:
 x_keyword_search:
   method: safe-social x search
   status: auto
-  query_groups_per_run: 5
+  intent_groups_per_run: 5
   lang: en
   exclude: [retweets]
   request_interval_s: 4.0
@@ -68,22 +68,8 @@ x_keyword_search:
       per_query: 14
       window_h: 96
       min_engagement: 0
-  queries:
-    evidence_shift:
-      - '("updated guidance" OR "label change" OR "updated assessment") (health OR policy OR technology OR economy)'
-      - '("new safety information" OR "revised estimate" OR "warning removed" OR "warning added")'
-    credible_conflict:
-      - '("conflicting evidence" OR "mixed findings" OR "no consensus") (health OR policy OR science OR technology)'
-      - '("disagreement between" OR "evidence remains uncertain") (agency OR guideline OR regulator OR experts)'
-    conditional_decision:
-      - '("under what conditions" OR "what signals would" OR "depends on whether") (decision OR forecast OR evidence)'
-      - '("risk benefit" OR "scenario analysis" OR "decision criteria")'
-    moving_decision:
-      - '("call for evidence" OR "public consultation" OR "draft guidance" OR "proposed rule")'
-      - '("advisory committee" OR "feedback period") (open OR deadline OR closing)'
-    definition_boundary:
-      - '("official definition" OR "eligibility criteria" OR "what counts as") (rule OR program OR policy OR evidence)'
-      - '("inclusion criteria" OR "formal designation" OR "scope of the rule")'
+  query_source: config/editorial_intents.yml
+  note: "只执行 editorial intent 中的具体 event queries；本文件不再维护抽象 problem-shape query。"
 
 x_conversation_graph:
   method: safe-social x search --to

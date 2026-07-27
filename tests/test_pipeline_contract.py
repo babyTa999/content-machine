@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 from oracle import score
+from oracle import collect
 
 
 def candidate(
@@ -20,6 +21,8 @@ def candidate(
 ) -> dict:
     return {
         "candidate_id": candidate_id,
+        "canonical_event_id": candidate_id,
+        "object_type": "canonical_event",
         "platform": platform,
         "url": url,
         "canonical_url": url,
@@ -38,12 +41,36 @@ class ProductLedContractTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.pillars = score.load_yaml(score.REPO / "config" / "pillars.yml")
         cls.sources = score.load_yaml(score.REPO / "config" / "sources.yml")
+        cls.intents = score.load_yaml(score.REPO / "config" / "editorial_intents.yml")
+        cls.golden = score.load_yaml(score.REPO / "config" / "editorial_golden_set.yml")
+
+    def test_editorial_intents_and_golden_set_reference_valid_ids(self) -> None:
+        intents = self.intents.get("intents") or {}
+        for intent_id, definition in intents.items():
+            self.assertTrue(definition.get("event_triggers"), intent_id)
+            self.assertTrue(definition.get("source_types"), intent_id)
+            self.assertTrue(definition.get("positive_examples"), intent_id)
+            self.assertTrue(definition.get("negative_examples"), intent_id)
+            self.assertTrue(definition.get("product_backing"), intent_id)
+            for column in definition.get("columns") or []:
+                self.assertIn(column, self.pillars["columns"], intent_id)
+            for shape in definition.get("problem_shapes") or []:
+                self.assertIn(shape, self.pillars["problem_shapes"], intent_id)
+            for thesis in definition.get("theses") or []:
+                self.assertIn(thesis, self.pillars["theses"], intent_id)
+            for backing in definition.get("product_backing") or []:
+                self.assertIn(backing, self.pillars["capability_backing"], intent_id)
+        for example in self.golden.get("examples") or []:
+            for intent_id in example.get("matched_intents") or []:
+                self.assertIn(intent_id, intents, example["id"])
 
     def test_valid_original_has_one_destination_and_action(self) -> None:
         item = candidate("cand_keep")
         row = {
             "candidate_id": "cand_keep",
             "decision": "keep",
+            "editorial_intent_id": "EI1_official_answer_changed",
+            "event_match_reason": "正式指南因新证据更新",
             "problem_shape_id": "PS1_evidence_shift",
             "thesis_id": "T3_asynchronous_verification",
             "signal_role": "update",
@@ -92,6 +119,8 @@ class ProductLedContractTest(unittest.TestCase):
     def test_same_source_can_appear_only_once(self) -> None:
         first = candidate("cand_a")
         second = candidate("cand_b")
+        first["canonical_event_id"] = "evt_shared"
+        second["canonical_event_id"] = "evt_shared"
         candidates = {"cand_a": first, "cand_b": second}
         rows = [
             {
@@ -99,6 +128,12 @@ class ProductLedContractTest(unittest.TestCase):
                 "decision": "keep",
                 "primary_destination": "C1",
                 "primary_action": "original_post",
+                "source_says": "one event",
+                "why_now": "current",
+                "why_apodex": "matched",
+                "possible_angle": "angle",
+                "inference_boundary": "limited",
+                "needs_verification": [],
             },
             {
                 "candidate_id": "cand_b",
@@ -123,6 +158,29 @@ class ProductLedContractTest(unittest.TestCase):
             score.priority_score(anonymous, self.sources),
         )
 
+    def test_related_mentions_become_one_canonical_event(self) -> None:
+        first = collect.make_signal(
+            platform="x",
+            source_path="x_watchlist",
+            url="https://x.com/agency/status/1",
+            external_id="1",
+            title="Agency revises safety guidance after new evidence",
+            text="Agency revises safety guidance after new evidence",
+            published_at="2026-07-27T01:00:00Z",
+        )
+        second = collect.make_signal(
+            platform="web",
+            source_path="official_update",
+            url="https://agency.example/revised-guidance",
+            title="Agency revises safety guidance after new evidence",
+            text="The official record.",
+            published_at="2026-07-27T02:00:00Z",
+        )
+        events = collect.build_canonical_events([first, second])
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["object_type"], "canonical_event")
+        self.assertEqual(events[0]["mention_count"], 2)
+
     def test_offline_cli_round_trip(self) -> None:
         with tempfile.TemporaryDirectory(prefix="apodex-contract-") as temp:
             directory = Path(temp)
@@ -143,7 +201,8 @@ class ProductLedContractTest(unittest.TestCase):
                 "action_hints": ["original_post"],
             }
             raw = {
-                "schema_version": 3,
+                "schema_version": 4,
+                "object_type": "canonical_event_collection",
                 "collected_at": "2026-07-27T08:00:00+00:00",
                 "source_health": {},
                 "candidates": [item],
@@ -173,6 +232,8 @@ class ProductLedContractTest(unittest.TestCase):
                     {
                         "candidate_id": "cand_contract",
                         "decision": "keep_for_enrichment",
+                        "editorial_intent_id": "EI1_official_answer_changed",
+                        "event_match_reason": "official answer changed",
                         "problem_shape_id": "PS1_evidence_shift",
                         "thesis_id": "T3_asynchronous_verification",
                         "likely_column": "C1",
@@ -205,7 +266,7 @@ class ProductLedContractTest(unittest.TestCase):
                 text=True,
             )
             enriched = {
-                "schema_version": 3,
+                "schema_version": 4,
                 "run_id": "test",
                 "enriched_at": "2026-07-27T08:10:00+00:00",
                 "source_audit": {},
@@ -219,6 +280,8 @@ class ProductLedContractTest(unittest.TestCase):
                     {
                         "candidate_id": "cand_contract",
                         "decision": "keep",
+                        "editorial_intent_id": "EI1_official_answer_changed",
+                        "event_match_reason": "official answer changed",
                         "problem_shape_id": "PS1_evidence_shift",
                         "thesis_id": "T3_asynchronous_verification",
                         "signal_role": "update",

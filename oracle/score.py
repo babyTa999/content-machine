@@ -299,6 +299,32 @@ def keyword_hints(text: str, groups: dict[str, Any]) -> list[str]:
     return [key for _, key in sorted(scored, reverse=True)]
 
 
+def editorial_intent_hints(candidate: dict[str, Any], intents: dict[str, Any]) -> list[str]:
+    text = " ".join(
+        str(value or "") for value in (
+            candidate.get("event_summary"), candidate.get("title"), candidate.get("text")
+        )
+    ).lower()
+    explicit = {
+        str(item.get("editorial_intent_id"))
+        for item in candidate.get("provenance") or []
+        if item.get("editorial_intent_id")
+    }
+    scored: list[tuple[int, str]] = []
+    for intent_id, definition in (intents.get("intents") or {}).items():
+        if definition.get("status") != "active":
+            continue
+        hits = sum(
+            1 for trigger in definition.get("event_triggers") or []
+            if str(trigger).lower() in text
+        )
+        if intent_id in explicit:
+            hits += 2
+        if hits:
+            scored.append((hits, str(intent_id)))
+    return [intent_id for _, intent_id in sorted(scored, reverse=True)]
+
+
 def evidence_role(candidate: dict[str, Any], sources: dict[str, Any]) -> str:
     context = candidate.get("context") or {}
     explicit = str(context.get("evidence_role") or candidate.get("source_role") or "")
@@ -352,9 +378,10 @@ def priority_score(candidate: dict[str, Any], sources: dict[str, Any]) -> float:
 
 def prefilter(args: argparse.Namespace) -> None:
     raw = load_json(args.raw)
-    if raw.get("schema_version") != 3:
-        raise SystemExit("Expected collect schema_version=3")
+    if raw.get("schema_version") != 4:
+        raise SystemExit("Expected collect schema_version=4 canonical events")
     pillars = load_yaml(REPO / "config" / "pillars.yml")
+    intents = load_yaml(REPO / "config" / "editorial_intents.yml")
     sources = load_yaml(REPO / "config" / "sources.yml")
     state_cfg = sources.get("state") or {}
     run_id = str(raw.get("run_id") or raw.get("collected_at") or dt.datetime.now(dt.timezone.utc).isoformat())
@@ -386,6 +413,7 @@ def prefilter(args: argparse.Namespace) -> None:
                     definition.get("problem_shapes") or []
                 )
             ]
+            candidate["editorial_intent_hints"] = editorial_intent_hints(candidate, intents)
             candidate["evidence_role"] = evidence_role(candidate, sources)
             candidate["priority_score"] = priority_score(candidate, sources)
             observe_candidate(connection, candidate, run_id, observed_at, seen_date, competitors)
@@ -401,7 +429,8 @@ def prefilter(args: argparse.Namespace) -> None:
         connection.close()
     survivors.sort(key=lambda item: (-float(item.get("priority_score") or 0), item["candidate_id"]))
     payload = {
-        "schema_version": 3,
+        "schema_version": 4,
+        "object_type": "canonical_event_recall_input",
         "stage": "recall_input",
         "run_id": run_id,
         "collected_at": observed_at,
@@ -471,7 +500,7 @@ def recall_chunks(args: argparse.Namespace) -> None:
     chunks = [candidates[index : index + size] for index in range(0, len(candidates), size)] or [[]]
     for index, rows in enumerate(chunks, start=1):
         payload = {
-            "schema_version": 3,
+            "schema_version": 4,
             "stage": "recall_input_chunk",
             "run_id": source.get("run_id"),
             "chunk_index": index,
@@ -535,6 +564,32 @@ def validate_theme_match(
     if column and column not in (thesis.get("allowed_columns") or []):
         raise SystemExit(f"Thesis {thesis_id} cannot route to {column}: {candidate_id}")
     return problem_shape_id, thesis_id
+
+
+def validate_editorial_intent(
+    row: dict[str, Any],
+    candidate_id: str,
+    problem_shape_id: str,
+    thesis_id: str,
+    column: str,
+    backing: str,
+) -> str:
+    configured = load_yaml(REPO / "config" / "editorial_intents.yml")
+    intent_id = str(row.get("editorial_intent_id") or "")
+    intent = (configured.get("intents") or {}).get(intent_id)
+    if not intent or intent.get("status") != "active":
+        raise SystemExit(f"Invalid/missing editorial_intent_id for {candidate_id}: {intent_id}")
+    if problem_shape_id not in (intent.get("problem_shapes") or []):
+        raise SystemExit(f"Intent {intent_id} does not allow {problem_shape_id}: {candidate_id}")
+    if thesis_id not in (intent.get("theses") or []):
+        raise SystemExit(f"Intent {intent_id} does not allow {thesis_id}: {candidate_id}")
+    if column not in (intent.get("columns") or []):
+        raise SystemExit(f"Intent {intent_id} does not route to {column}: {candidate_id}")
+    if backing not in (intent.get("product_backing") or []):
+        raise SystemExit(f"Intent {intent_id} is not backed by {backing}: {candidate_id}")
+    if not str(row.get("event_match_reason") or "").strip():
+        raise SystemExit(f"Intent match requires event_match_reason: {candidate_id}")
+    return intent_id
 
 
 def record_outcomes(
@@ -619,6 +674,10 @@ def validate_recall(args: argparse.Namespace) -> None:
             if backing not in set(pillars.get("capability_backing") or []):
                 raise SystemExit(f"Recall missing capability_backing for {candidate_id}")
             cleaned["capability_backing"] = backing
+            cleaned["editorial_intent_id"] = validate_editorial_intent(
+                row, candidate_id, problem_shape_id, thesis_id, likely_column, backing
+            )
+            cleaned["event_match_reason"] = str(row.get("event_match_reason") or "")
         normalized.append(cleaned)
     normalized.sort(key=lambda row: (-float(candidates[row["candidate_id"]].get("priority_score") or 0), row["candidate_id"]))
     sources_cfg = load_yaml(REPO / "config" / "sources.yml")
@@ -667,7 +726,7 @@ def validate_recall(args: argparse.Namespace) -> None:
         row["queued_for_enrichment"] = row["candidate_id"] in selected_set
     run_id = str(source.get("run_id") or "unknown")
     clean = {
-        "schema_version": 3,
+        "schema_version": 4,
         "stage": "recall_decisions",
         "run_id": run_id,
         "counts": {
@@ -678,7 +737,7 @@ def validate_recall(args: argparse.Namespace) -> None:
         "decisions": normalized,
     }
     queue = {
-        "schema_version": 3,
+        "schema_version": 4,
         "stage": "enrichment_queue",
         "run_id": run_id,
         "candidate_ids": selected_ids,
@@ -735,6 +794,11 @@ def normalize_evidence_decision(
                 f"Evidence keep requires capability_backing: {candidate['candidate_id']}"
             )
         cleaned["capability_backing"] = backing
+        cleaned["editorial_intent_id"] = validate_editorial_intent(
+            row, candidate["candidate_id"], problem_shape_id, thesis_id,
+            primary_destination, backing,
+        )
+        cleaned["event_match_reason"] = str(row.get("event_match_reason") or "")
         signal_role = str(row.get("signal_role") or "")
         if signal_role not in (pillars.get("signal_roles") or {}):
             raise SystemExit(f"Evidence keep requires valid signal_role: {candidate['candidate_id']}")
@@ -793,15 +857,11 @@ def render_report(
         if row["decision"] not in {"keep", "interaction"}:
             continue
         candidate = candidates[row["candidate_id"]]
-        source_key = str(
-            candidate.get("canonical_url")
-            or candidate.get("url")
-            or candidate["candidate_id"]
-        )
+        source_key = str(candidate.get("canonical_event_id") or candidate["candidate_id"])
         previous = seen_sources.get(source_key)
         if previous:
             raise SystemExit(
-                f"One source may appear only once in the report: {source_key} "
+                f"One canonical event may appear only once in the report: {source_key} "
                 f"({previous}, {row['candidate_id']})"
             )
         seen_sources[source_key] = row["candidate_id"]
@@ -896,7 +956,7 @@ def render(args: argparse.Namespace) -> None:
     normalized.sort(key=lambda row: (-float(candidates[row["candidate_id"]].get("priority_score") or 0), row["candidate_id"]))
     run_id = str(source.get("run_id") or "unknown")
     clean = {
-        "schema_version": 3,
+        "schema_version": 4,
         "stage": "evidence_decisions",
         "run_id": run_id,
         "counts": {state: sum(row["decision"] == state for row in normalized) for state in EVIDENCE_STATES},

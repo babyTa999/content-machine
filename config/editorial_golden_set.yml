@@ -1,0 +1,49 @@
+schema_version: 1
+
+# 抓得准与当前要不要继续写分开标注；新材料不能默默复活暂停系列。
+examples:
+  - id: GS_POS_001
+    label: retrieval_positive
+    current_publish_policy: paused_proof
+    source: "Science Magazine X post, 2026-07-23"
+    text: "AI influence may slow authentic research and validated findings while flawed or fabricated information grows."
+    matched_intents: []
+    why_good: "权威机构、普通读者可立即理解、现实 stakes 清楚。"
+    guardrail: "只作历史召回正例；Proof 暂停，不进入当前原创池。"
+  - id: GS_POS_002
+    label: retrieval_positive
+    current_publish_policy: paused_proof
+    source: "Stanford HAI X post, 2026-07-22"
+    text: "Over 1,700 legal cases involved AI-hallucinated facts, cases, and laws; legal AI performance remains poorly measured."
+    matched_intents: []
+    why_good: "机构一手入口、现实后果具体、图片独立表达论点。"
+    guardrail: "只作历史召回正例；benchmark / generic verification 当前不继续写。"
+  - id: GS_POS_003
+    label: retrieval_positive
+    current_publish_policy: active
+    source: "DellaVigna and Vivalt forecast aggregation post"
+    text: "53,298 forecasts across 100 projects were systematically optimistic, but aggregation and reweighting retained useful signal."
+    matched_intents: [EI4_many_judgments_one_decision]
+    why_good: "普通人能理解，并直接说明系统为何应聚合、挑战和校准多个独立判断。"
+    guardrail: "发布前回到论文核对所有数字。"
+  - id: GS_NEG_001
+    label: retrieval_negative
+    current_publish_policy: reject
+    source: "Selene review pattern"
+    text: "A narrow paper proposes an experiment, assay, pipeline, or domain-specific next step."
+    matched_intents: []
+    why_bad: "缺少官网同构问题与产品承接。"
+  - id: GS_NEG_002
+    label: retrieval_negative
+    current_publish_policy: reject
+    source: "Selene review pattern"
+    text: "Another reproducibility, generic hallucination, benchmark bias, or human verification story."
+    matched_intents: []
+    why_bad: "属于已讲过的 Proof 叙事；换来源不构成新选题。"
+  - id: GS_NEG_003
+    label: retrieval_negative
+    current_publish_policy: reject
+    source: "Selene review pattern"
+    text: "A low-reach account or competitor launch duplicated across original and interaction."
+    matched_intents: []
+    why_bad: "互动资格与原创价值混淆；同一事件必须只有一个归宿。"

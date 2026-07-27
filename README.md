@@ -26,7 +26,8 @@ Proof / benchmark 当前暂停，包括 SOTA、leaderboard、模型横评、内�
 
 ## 母题 × 外部信号
 
-母题与兼容关系见 [`config/pillars.yml`](config/pillars.yml)。活跃问题形态包括：
+母题的现实事件入口见 [`config/editorial_intents.yml`](config/editorial_intents.yml)，
+兼容关系见 [`config/pillars.yml`](config/pillars.yml)。活跃问题形态包括：
 
 1. 新证据改变原来的答案；
 2. 两个可信来源给出冲突结论；
@@ -40,6 +41,7 @@ Proof / benchmark 当前暂停，包括 SOTA、leaderboard、模型横评、内�
 
 每条原创候选必须同时具有：
 
+- 一个 `editorial_intent_id` 与可审计的 `event_match_reason`；
 - 一个 `problem_shape_id`；
 - 一个 compatible `thesis_id`；
 - `website` / `technical_report` / `demo` / `owner_confirmed`
@@ -67,14 +69,14 @@ official_record
 
 当前自动来源：
 
-- X：机构/专家 watchlist、problem-shape query、conversation graph、dynamic watch；
-- Reddit：只找 pain language 与 case lead，匿名内容不能直接成为官号案例；
+- X：机构/专家 watchlist、editorial-intent event query、dynamic watch；
 - FDA safety / alert index；
 - EU Have Your Say open initiatives；
 - Federal Reserve press-release RSS；
-- Google News signal queries；
 - Nature / Science lead-only RSS；
 - official challenges 与 prediction bank。
+
+conversation graph、Reddit discovery 与 Google News signal 当前关闭。
 
 不再主动搜索：
 
@@ -87,12 +89,12 @@ official_record
 ## 管线
 
 ```text
-external signals
-  → unified candidate schema
+external source mentions
+  → deterministic canonical events
   → deterministic exclusion + cross-day state
-  → Recall Judge: problem shape × thesis pairing
+  → Recall Judge: event → editorial intent → product qualification
   → deterministic enrichment
-  → Evidence Judge: source, stakes, product backing
+  → Evidence Judge: verified event match, source, stakes, product backing
   → exactly one destination + exactly one action
   → report
 ```
@@ -100,12 +102,13 @@ external signals
 Judge 规则在 [`personas/选题judge-X.md`](personas/选题judge-X.md)。
 代码会校验：
 
-- 每个 candidate ID 恰好被判断一次；
+- 每个 canonical event ID 恰好被判断一次；
+- 每个原创事件必须先匹配 active editorial intent；
 - 原创必须有合法 problem shape、thesis 和 capability backing；
 - thesis、problem shape 与 column 必须兼容；
 - C3 必须是真正的 decision window；
 - 原创与互动互斥；
-- 同一个来源不能跨栏目或跨原创/互动重复；
+- 同一个 canonical event 不能跨栏目或跨原创/互动重复；
 - X / Reddit 互动动作必须与平台匹配。
 
 ## 安全边界
@@ -124,7 +127,7 @@ Judge 规则在 [`personas/选题judge-X.md`](personas/选题judge-X.md)。
 ~/Library/Application Support/Apodex Content Machine/oracle.sqlite3
 ```
 
-默认 exact 去重 45 天、story 去重 14 天。数据库只保存外部 candidate 标识、
+默认 exact 去重 45 天、story 去重 14 天。数据库只保存外部 event/mention 标识、
 跨日出现记录、账号统计与 Judge outcome。
 
 ## 运行
@@ -142,8 +145,10 @@ Judge 规则在 [`personas/选题judge-X.md`](personas/选题judge-X.md)。
 关键文件：
 
 - [`config/pillars.yml`](config/pillars.yml)：母题、问题形态、栏目和硬门；
+- [`config/editorial_intents.yml`](config/editorial_intents.yml)：事件触发词、信源类型、正反例与产品 backing；
+- [`config/editorial_golden_set.yml`](config/editorial_golden_set.yml)：Selene 历史 review 正反例与当前发布政策；
 - [`config/sources.yml`](config/sources.yml)：外部信号库与 evidence-role 优先级；
 - [`config/watchlist.yml`](config/watchlist.yml)：公开外部账号占位，不存内部名单；
-- [`oracle/collect.py`](oracle/collect.py)：采集、统一 schema、enrichment；
+- [`oracle/collect.py`](oracle/collect.py)：采集、mention 聚合、canonical event 与 enrichment；
 - [`oracle/score.py`](oracle/score.py)：去重、校验、唯一归宿和报告渲染；
 - [`personas/选题judge-X.md`](personas/选题judge-X.md)：两阶段编辑 contract。
