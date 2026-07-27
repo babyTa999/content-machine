@@ -9,5 +9,4 @@
 
 整个 `vault/` 除本说明与 `.gitkeep` 外都被 gitignore，不会提交外部采集内容或 Judge 结果。
 
-历史遗存：`.legacy-*-judged.md` 是旧命名（终审报告曾叫 `-judged.md`）留下的文件，
-当前管线不再产出该后缀。
+⚠️ 因此 vault 里的任何东西 git 都救不回来。终审报告要留存就复制出 `vault/`。
