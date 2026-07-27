@@ -2,6 +2,45 @@
 # External signals may supply timing, stakes, conflict, or a real case. They may
 # not invent an Apodex thesis. Every retained original must match one problem
 # shape and one owned thesis below.
+#
+# 母问题（root_question）是本 contract 的第 0 层：所有栏目、母题、问题形态与
+# thesis 最终都要收口回同一句。八个 thesis 并列等于没有母问题 —— 那是内容"散"的
+# 结构性原因，不是算子不够。
+#
+# 算子层（"这条怎么写"）见 config/operators.yml。
+
+root_question:
+  RQ_who_checked:
+    text_en: "Who checked this — other than the person who made it?"
+    text_zh: "除了做出这个判断的人，还有谁检查过它？"
+    close_phrase_zh: "这个判断有没有资格被相信"
+    close_phrase_note: |
+      注意不是"对不对"。出处：Apodex Verification 内部文件《TracesA 与 TracesB》——
+      Verifier 只做结构性验证，不判断答案真伪。对外表述必须保持这个边界。
+    audience: |
+      学术 PI / 实验室负责人 / 深科技研究者 / 量化研究者。
+      依据 Frontier Program 落地页 Who We Support 与战略文件 A1 范围
+      （全部 STEM 学科：生物医药、材料、能源、化学、物理、计算机）。
+    natural_adversary: "自评（self-review）。母问题的张力来自这里。"
+    report_backing:
+      - "Technical Report §3.1 — verification proceeds not as introspection but as an external check by agents uninvolved in the process under review"
+      - "Technical Report §1 — self-reflection degrades with each additional turn"
+      - "Frontier Program 落地页 — independent verification"
+    sub_question:
+      text_zh: "你的结论里，少了哪一个你没想到的对照？"
+      text_en: "What is the control you did not think of?"
+      note: "对应 Verifier 的 Alternatives 维度。E1 引擎（EI6）的收口句。"
+
+# 金融赛道（ECOA / Reg B / AML / 信贷）另有母问题，与 RQ_who_checked 语法不同。
+# 战略文件明确两条赛道各自独立执行、不合并计算，故本 contract 当前仅服务科学研究赛道。
+# 开金融线需另立 root_question，不得混入同一排期。
+scope:
+  active_track: science_research
+  excluded_track:
+    finance: "需另立 root_question 与独立排期；混发会互相稀释受众"
+
+operators_ref: config/operators.yml
+confound_library_ref: config/confound_library.yml
 
 columns:
   C1:
@@ -119,6 +158,41 @@ problem_shapes:
       - source diversity
       - widely reported
       - syndicated
+  PS10_missing_control:
+    name: "结论没有排除掉替代解释"
+    intake: curated
+    source: config/confound_library.yml
+    keywords:
+      - reporting standard
+      - reporting guidelines
+      - author checklist
+      - round robin
+      - interlaboratory
+      - confounder
+      - sham control
+      - negative control
+      - normalization basis
+      - baseline comparison
+    hard_gate:
+      note: |
+        E1 引擎的反退化闸门。以下五项缺一即拒 —— 这使"科学不可复现""某领域方法
+        论文导读"这类泛叙事在结构上无法进入（它们填不出 reported_metric 与 confound）。
+      required_fields:
+        - discipline
+        - reported_metric
+        - confound
+        - control_or_report_item
+        - standard_source
+  PS11_cross_field_isomorphism:
+    name: "两个学科的难题在计算范式上是同一个问题"
+    intake: curated
+    source: "战略文件 A1 —— 材料/能源的结构-性能优化与蛋白质/AAV 结构优化在计算范式上高度相似，技术栈可复用"
+    keywords:
+      - structure property optimization
+      - high dimensional search
+      - expensive validation
+      - transferable method
+      - same computational shape
 
 theses:
   T1_single_pass_ceiling:
@@ -129,8 +203,9 @@ theses:
   T2_independent_verification:
     name: "验证必须由独立角色完成"
     report_source: "Technical Report §3.1"
+    root_question: RQ_who_checked
     allowed_columns: [C1, C2]
-    problem_shapes: [PS2_credible_conflict, PS5_definition_boundary, PS8_auditable_conclusion]
+    problem_shapes: [PS2_credible_conflict, PS5_definition_boundary, PS8_auditable_conclusion, PS10_missing_control]
   T3_asynchronous_verification:
     name: "验证应在研究过程中推进"
     report_source: "Technical Report §3.2"
@@ -161,6 +236,17 @@ theses:
     report_source: "Technical Report §6.1"
     allowed_columns: [C1, C2]
     problem_shapes: [PS1_evidence_shift, PS3_conditional_decision, PS4_fragmented_record]
+  T9_cross_domain_synthesis:
+    name: "跨领域证据综合：一个领域的成熟解法搬到另一个领域"
+    report_source: "Frontier Program 落地页 — cross-domain evidence synthesis；战略文件 A1 技术栈复用"
+    backing_note: |
+      本 thesis 的一手背书是官网/落地页而非技术报告章节，故使用它的候选
+      capability_backing 应填 website。材料/能源目前在落地页 Where We've Gone
+      Deepest 中没有案例，写这两科时能力表述只能引落地页原句：
+      "The examples above reflect our current depth of validation, not the
+      boundaries of what's possible."
+    allowed_columns: [C1, C2]
+    problem_shapes: [PS11_cross_field_isomorphism, PS4_fragmented_record]
 
 signal_roles:
   timing: "为既定母题提供当下性"

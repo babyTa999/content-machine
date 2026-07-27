@@ -82,3 +82,59 @@ intents:
         - '("newly disclosed" OR "records revealed" OR "documents show") (investigation OR case)'
         - '("unreported case" OR "across jurisdictions" OR "multiple registries")'
 
+  # ---------------------------------------------------------------------------
+  # 常青引擎（evergreen）。EI1–EI5 全部事件驱动，没新闻的一周就断供。
+  # EI6 / EI7 的主入口是 curated 母表，不是抓取器；X query 只提供 timing，
+  # 不提供选题。这是"源源不断"的结构保证。
+  #
+  # 注意：collect.py:432 会跳过没有 x_queries 的 active intent，而
+  # tests/test_pipeline_contract.py::test_each_active_intent_contributes_one_rotating_query
+  # 断言每个 active intent 必须产出一条 query。所以两者都必须带 x_queries。
+  # ---------------------------------------------------------------------------
+
+  EI6_missing_control:
+    name: "报告出来的指标没有排除掉替代解释"
+    status: active
+    intake: curated
+    intake_source: config/confound_library.yml
+    columns: [C1, C2]
+    problem_shapes: [PS10_missing_control]
+    theses: [T2_independent_verification]
+    event_triggers: [reporting standard published, reporting guidelines updated, author checklist required, round robin study, interlaboratory comparison, checklist adopted by journal, minimum reporting set]
+    source_types: [standards_body, scientific_institution, primary_research]
+    product_backing: [technical_report]
+    positive_examples:
+      - "某学科发布或更新了一份公开的 reporting standard / author checklist，其中某一条报告项正是排除某个具名混杂因素所必需"
+      - "多实验室 round-robin 显示统一材料下性能差异来自装配或协议参数，而非被研究的对象"
+    negative_examples:
+      - "泛泛讨论科学不可复现、复现性危机或同行评议产能问题（docs/01 排除边界已明文排除复现性泛叙事）"
+      - "只是介绍一篇学术方法论文，没有具名指标与具名混杂因素"
+      - "任何指向具体研究者或具体论文的诚信指控（pillars.yml exclude 硬拦）"
+    hard_gate_ref: "pillars.yml → problem_shapes.PS10_missing_control.hard_gate"
+    retrieval:
+      x_queries:
+        - '("reporting standard" OR "reporting guidelines" OR "author checklist") (journal OR editors OR required)'
+        - '("round robin" OR "interlaboratory") (reproducibility OR variability OR protocol)'
+
+  EI7_cross_field_isomorphism:
+    name: "两个学科的难题在计算范式上是同一个问题"
+    status: active
+    intake: curated
+    intake_source: "战略文件 A1 学科配对；Selene 供料"
+    columns: [C1, C2]
+    problem_shapes: [PS11_cross_field_isomorphism]
+    theses: [T9_cross_domain_synthesis]
+    event_triggers: [method transferred, borrowed from another field, same computational problem, structure property optimization, cross disciplinary method]
+    source_types: [primary_research, scientific_institution]
+    product_backing: [website, technical_report]
+    positive_examples:
+      - "A 学科的一个难题与 B 学科的难题在计算范式上同构，且 B 学科已有更成熟的解法而 A 学科尚未采用"
+      - "一个方法从某领域迁移到另一个领域并给出可核证的结果"
+    negative_examples:
+      - "只是并列两个领域的表面类比，没有说明计算范式上哪里同构"
+      - "把 Apodex 说成已在某学科验证过 —— 落地页 Where We've Gone Deepest 只有生命科学与量化研究"
+    retrieval:
+      x_queries:
+        - '("same problem" OR "borrowed from" OR "transfers directly") (materials OR catalysis OR protein OR battery)'
+        - '("structure-property" OR "high-dimensional search") (optimization OR design OR screening)'
+

@@ -1,0 +1,200 @@
+schema_version: 1
+
+# 算子层 = "这条怎么写"。
+#
+# 现有 config 的 editorial_intent / problem_shape / thesis / column 四个字段全部回答
+# "Apodex 凭什么能讲"。它们不回答"落笔第一句是什么"。算子填这个空。
+#
+# 逆向来源：@ambient_xyz 2026-06-08 → 2026-07-27 共 80 条帖的结构拆解。
+# 该账号 80 条全部收敛到同一个母问题，所以永不缺题；算子是它把每天的世界
+# 重新问一遍那个母问题的函数。
+#
+# 母问题（root_question）见 pillars.yml。所有算子的收口必须落回同一句：
+#   "这个判断有没有资格被相信" —— 注意不是"对不对"。
+#   （出处：Apodex Verification 内部文件《TracesA 与 TracesB》，Verifier 只做结构性验证）
+
+root_question_ref: RQ_who_checked
+
+tiers:
+  T1: "每周主力，覆盖约 70% 排期"
+  T2: "机会型，事件驱动"
+  T3: "格式层或 Selene 亲自供料"
+
+operators:
+
+  # ---------- Tier 1 ----------
+
+  OP2_term_inflation_audit:
+    name: "术语通胀审计"
+    tier: T1
+    status: active
+    input_signal: "一个行业词被期刊 / 厂商 / 机构滥用到失去判定力（deep research、agent、AI scientist、verified）"
+    move: "把这个词拆成 3 个可分别判定的子问题，并指出多数玩家在第几个上失守"
+    close: "A real claim names three things: who checked it, against what external record, and what they would have lost by waving it through."
+    apodex_backing:
+      capability_backing: technical_report
+      locator: "Technical Report §3.1 — verification team 三角色：conflict reviewer / fact checker / draft-report reviewer"
+    guard: "不得顺势报 Apodex 自己的任何分数或排名（proof 系列暂停）"
+
+  OP5_incentive_misalignment_audit:
+    name: "激励错配审计"
+    tier: T1
+    status: active
+    input_signal: "任何审查 / 评议 / 监督 / 认证类事件"
+    move: "不问对方说了什么，问说错了谁付钱"
+    close: "If the checker loses nothing for waving it through, it is not a check."
+    apodex_backing:
+      capability_backing: technical_report
+      locator: "Technical Report §3.1 — an external check by agents uninvolved in the process under review"
+    guard: "对象是机制不是个人；不点名指控任何具体研究者"
+
+  OP8_primary_document_raid:
+    name: "一手文件突袭"
+    tier: T1
+    status: active
+    input_signal: "发布日 / 大新闻日。别人读摘要与新闻稿，你读注册记录、协议版本、补充材料、纳入排除标准、投票明细、许可证"
+    move: "在公开文件之间找出一个任何人都能在几分钟内复核的内部矛盾或缺失项"
+    close: "This was public the whole time. Nobody's job was to diff it."
+    apodex_backing:
+      capability_backing: technical_report
+      locator: "Technical Report Abstract — every claim backed by an explicit evidence chain"
+    guard: |
+      不得滑向 academic integrity（pillars.yml exclude 已硬拦 academic misconduct /
+      paper mill / plagiarism allegation / peer review fraud）。写的是文件之间的结构
+      不一致，不是指控造假。
+
+  OP9_source_collapse_parable:
+    name: "悬案当寓言"
+    tier: T1
+    status: active
+    input_signal: "一个真实的『很多引用最终坍缩到同一个来源』或『被引 N 次之后才有人打开原始记录』的案子"
+    move: "用一个案子说明整个领域的当前状态，而不是评判这一个案子"
+    close: "N papers built on it before anyone opened the registry."
+    apodex_backing:
+      capability_backing: technical_report
+      locator: "PS9_source_collapse / Technical Report §4.1"
+    guard: "案子必须有一手公开记录；不用匿名爆料或社媒传闻当主证据"
+
+  # ---------- Tier 2 ----------
+
+  OP1_constant_falsified:
+    name: "恒量证伪"
+    tier: T2
+    status: active
+    input_signal: "一个被当成常量的研究前提变了：定义、纳入排除条件、口径、终点、阈值"
+    move: "证明大家以为是常量的东西其实是变量，而且它已经动了"
+    close: "You thought that was a constant. It is a variable, and it moved."
+    apodex_backing:
+      capability_backing: technical_report
+      locator: "PS5_definition_boundary"
+
+  OP4_measurement_collapse:
+    name: "测量崩塌"
+    tier: T2
+    status: active
+    input_signal: "权威测量 / 评测 / 评议失效：被 game、区间宽到无意义、评估方自己放弃"
+    move: "说明所有建立在该测量之上的结论同时空转"
+    close: "That is not a measurement."
+    apodex_backing:
+      capability_backing: technical_report
+      locator: "Technical Report §1 — a ReAct agent saturates after a few hundred steps regardless of the underlying model"
+    guard: "只讲测量方法失效。绝不顺势报 Apodex 分数（proof 系列暂停）"
+
+  OP7_compliance_clock_recompute:
+    name: "合规倒计时重算"
+    tier: T2
+    status: active
+    input_signal: "监管日期变动、征求意见开启或截止、标准草案进入下一阶段"
+    move: "不报新闻，算多出来（或少掉）的时间该怎么用"
+    close: "The obligation did not shrink. Cheap to design in, painful to retrofit."
+    apodex_backing:
+      capability_backing: technical_report
+      locator: "EI3_open_decision_window 现成管线"
+
+  OP10_paradigm_hidden_bill:
+    name: "范式隐藏账单"
+    tier: T2
+    status: active
+    input_signal: "事故 / 翻车 / 失效事件"
+    move: "说明这不是 bug 而是范式的结构成本，并指出标准修法只解决一半"
+    close: "The standard fix is necessary and still only half of it."
+    apodex_backing:
+      capability_backing: technical_report
+      locator: "Technical Report §1 — the ReAct paradigm carries a paradigm-level ceiling"
+    guard: |
+      执行类翻车不蹭。Apodex 出报告，不执行、不写码、不动文件，对执行事故
+      没有产品同构性，蹭了就是越界。
+
+  # ---------- Tier 3 ----------
+
+  OP11_boundary_self_disclosure:
+    name: "边界自曝"
+    tier: T3
+    status: always_on
+    input_signal: "不需要外部信号。这是格式而非选题"
+    move: "主动划出自己不管的部分，用限定换可信"
+    close: "We return a report. We do not run your experiment."
+    fixed_material:
+      - "Apodex 出报告，不执行实验、不写码、不动文件"
+      - "Verifier 查的是结构：这个判断有没有资格被相信，不是答案本身对不对"
+      - "Deep Discover 走申请制 / request-access"
+    apodex_backing:
+      capability_backing: technical_report
+      locator: "Technical Report §3.1；《TracesA 与 TracesB》Verifier 边界"
+    guard: |
+      每条原创必须带一句 OP11。它同时满足对外红线里"不许偷偷加承诺"：
+      成稿默认无承诺安全版，带承诺的变体只能作为提案单列。
+
+  OP12_narrative_time_of_death:
+    name: "叙事死亡时刻"
+    tier: T3
+    status: selene_only
+    input_signal: "宏观共识崩塌"
+    move: "标注某个行业共识叙事的死亡日期"
+    close: "That narrative died today."
+    apodex_backing:
+      capability_backing: owner_confirmed
+      locator: "C4 Worldview — 仅由 Selene 或已确认内部材料触发"
+    guard: "外部管线不得自动生成。pillars.yml 已设 C4 scrapable: false"
+
+  # ---------- 需改造 ----------
+
+  OP3_cost_confession_table:
+    name: "成本坦白表"
+    tier: T2
+    status: needs_rework
+    input_signal: "一类技术路线存在多个并列方案"
+    move: "并列所有方案各自的代价（包括自己那一项），自己那项标注未经独立验证"
+    close: "Every one of these is a real cost. The only wrong move is pretending yours is free."
+    rework_reason: |
+      原版（@ambient_xyz 实测该账号工艺帖最高互动，♥113）依赖并列比较，
+      在 Apodex 语境下会滑向 benchmark / 横评，而 proof 系列当前暂停。
+    rework_spec: |
+      只允许并列"代价"，不允许并列"性能"。可用素材：
+        - 单 agent 省 context 但吃 paradigm-level ceiling（Technical Report §1）
+        - agent team 吃协调成本与 15,000+ steps 的开销（§3.3）
+        - self-review 便宜但 degrades with each additional turn（§1）
+      自己那一项必须明文标注未经独立验证。
+    apodex_backing:
+      capability_backing: technical_report
+      locator: "Technical Report §1, §3.3"
+
+  # ---------- 弃选（保留口径，不再重复讨论） ----------
+
+  OP6_price_vs_cost:
+    name: "价格 vs 成本切分"
+    tier: null
+    status: dropped
+    drop_reason: |
+      无物料背书。pricing / access / API 口径未由 owner 确认，RULES 红线禁止
+      写成已确认。且 Apodex 不打价格战，该算子在原账号服务的是"租用 vs 自有"
+      商业叙事，与科学研究赛道受众无关。
+
+  OP13_own_numbers_as_industry_index:
+    name: "自家数字当行业指标"
+    tier: null
+    status: paused
+    pause_reason: |
+      目前没有可公开的 Apodex 用量数字。内部战略文件里的 20,000 家目标、
+      $50,000 setup、$3,000/月 Verifier fee 均为内部口径，绝不可外用。
+    unpause_condition: "owner 确认某个用量或采用数字可公开后恢复"

@@ -1,0 +1,363 @@
+schema_version: 1
+
+# 混杂因素母表 —— E1 引擎（EI6_missing_control）的唯一选题来源。
+#
+# 为什么要这张表：
+#   官号受众是学术 PI / 实验室负责人 / 深科技研究者（依据 Frontier Program 落地页
+#   Who We Support 与战略文件 A1 范围：全部 STEM 学科，不局限生物医药）。
+#   这批人每天真实焦虑的不是"AI 会不会犯错"，而是"我的结论排除掉替代解释了吗"——
+#   审稿人第一个问的就是这个。
+#
+# 为什么不需要懂 6 个学科：
+#   每个学科的混杂因素都已经被人写成 reporting standard / checklist / best-practice
+#   review 了。这活儿是检索已发表标准，不是自学材料学。
+#
+# 硬准入（五必填，缺一即拒）：
+#   discipline / reported_metric / confound / control_or_report_item / standard_source
+#   这五个字段使 E1 无法退化成"复现性泛叙事"或"学术方法论文导读"
+#   （两者已被 docs/01-选题哲学.md 排除边界明文排除）。
+#
+# 红线：
+#   1. 绝不点名指控具体研究者或具体论文造假。写的是"这个指标的结构性歧义"，
+#      不是"某人骗人"。pillars.yml exclude 已硬拦 academic misconduct / paper mill /
+#      plagiarism allegation / peer review fraud。
+#   2. 《TracesA 与 TracesB》里的 BLA→ACC 案例是内部文件，绝不外用。
+#      对外只用本表 standard_source 里已公开发表的材料。
+#   3. verification_status 非 verified 的条目，numbers_to_verify 必须在 draft 阶段
+#      逐条核到一手，才能进成稿。台账机制见 needs_verification 字段（已在 schema 内）。
+
+disciplines:
+  life_science: "生物医药 / 临床"
+  materials: "材料"
+  energy: "能源 / 电池"
+  chemistry: "化学 / 催化"
+  physics: "物理"
+  computing: "计算机 / 机器学习"
+
+confounds:
+
+  # ================= life_science =================
+
+  CF_life_sham_control:
+    discipline: life_science
+    reported_metric: "干预后出现的表型或行为变化"
+    confound: "手术 / 给药 / 操作流程本身改变了动物状态，而非被干预的靶点"
+    control_or_report_item: "sham（假手术）对照组：走完全部相同流程但不施加关键干预；并显式描述控制混杂的策略"
+    standard_source:
+      title: "The ARRIVE guidelines 2.0: updated guidelines for reporting animal research"
+      venue: "PLOS Biology（Explanation and Elaboration 版）"
+      year: 2020
+      locator: "10.1371/journal.pbio.3000411；checklist 见 arriveguidelines.org"
+      access: open
+    verification_status: needs_primary_check
+    numbers_to_verify:
+      - "ARRIVE Essential 10 中 confounders 条目的准确表述"
+      - "sham surgery 作为 negative control 的原文措辞"
+    operator_fit: [OP1_constant_falsified, OP8_primary_document_raid]
+
+  CF_life_blinding_effect_inflation:
+    discipline: life_science
+    reported_metric: "effect size / 治疗效应量"
+    confound: "非盲法的结局评估与缺失随机化，使效应量被系统性高估"
+    control_or_report_item: "报告在分配、实验执行、结局评估、数据分析四个阶段各自谁知道分组（ARRIVE item 5）"
+    standard_source:
+      title: "Reporting animal research: Explanation and elaboration for the ARRIVE guidelines 2.0"
+      venue: "PLOS Biology"
+      year: 2020
+      locator: "10.1371/journal.pbio.3000411"
+      access: open
+    verification_status: needs_primary_check
+    numbers_to_verify:
+      - "『缺乏随机化与盲法可致效应量膨胀 30–45%』——须核到 E&E 原文及其所引系统综述"
+    operator_fit: [OP4_measurement_collapse, OP8_primary_document_raid]
+
+  CF_life_offtarget_background:
+    discipline: life_science
+    reported_metric: "基因敲除 / 敲低后的表型"
+    confound: "脱靶效应，或品系遗传背景差异，而非目标基因"
+    control_or_report_item: "两条以上独立 gRNA 或独立敲低试剂给出一致表型；加回补（rescue）实验；报告品系与代数"
+    standard_source:
+      title: "待补：需锁定一份公开的 CRISPR 脱靶报告规范或期刊 author checklist"
+      venue: null
+      year: null
+      locator: null
+      access: null
+    verification_status: source_incomplete
+    numbers_to_verify: []
+    operator_fit: [OP1_constant_falsified]
+
+  # ================= energy =================
+
+  CF_energy_coincell_excess:
+    discipline: energy
+    reported_metric: "N 次循环后的容量保持率"
+    confound: "纽扣电池的过量锂与泛滥电解液——而这两者恰是新电解质配方本该节省的对象"
+    control_or_report_item: "与保持率曲线并列报告三个数：面容量（mAh cm-2）、N/P 比、电解液与容量比（g/Ah）"
+    standard_source:
+      title: "Critical Parameters for Evaluating Coin Cells and Pouch Cells of Rechargeable Li-Metal Batteries"
+      venue: "Joule"
+      year: 2019
+      locator: "S2542-4351(19)30053-4"
+      access: paywalled
+    verification_status: needs_primary_check
+    numbers_to_verify:
+      - "纽扣电池面容量约 1.0 mAh cm-2、锂负极 250 μm 以上、N/P ≥ 50"
+      - "高能量软包 N/P ≈ 2.6"
+      - "纽扣电池 E/C 约 75 g/Ah，为高能量软包的 25 倍以上；软包 < 10 mL/Ah"
+      - "上述参数下电芯级能量密度低于 50 Wh/kg"
+    operator_fit: [OP8_primary_document_raid, OP1_constant_falsified]
+
+  CF_energy_assembly_variance:
+    discipline: energy
+    reported_metric: "全固态电池循环性能"
+    confound: "装配参数差异（成型压力、加压时长、In-to-Li 比），而非材料或界面设计"
+    control_or_report_item: "报告 stack pressure 等装配参数全集，并以三重复（triplicate）报告数据"
+    standard_source:
+      title: "Benchmarking the reproducibility of all-solid-state battery cell performance"
+      venue: "Nature Energy"
+      year: 2024
+      locator: "s41560-024-01634-3（开放 PDF：pure-oai.bham.ac.uk）；配套社论 The path to accurate reporting, s41560-024-01663-y"
+      access: open
+    verification_status: needs_primary_check
+    numbers_to_verify:
+      - "21 个研究组参与 round-robin"
+      - "统一供料：正极 LiNi0.6Mn0.2Co0.2O2、固态电解质 Li6PS5Cl、负极 In"
+      - "stack pressure 区间 5–400 MPa"
+      - "各组自用装配流程但遵循统一电化学流程"
+    operator_fit: [OP8_primary_document_raid, OP4_measurement_collapse]
+
+  CF_energy_rate_protocol:
+    discipline: energy
+    reported_metric: "比容量 / 倍率性能"
+    confound: "测试倍率过低，容量对测试协议高度敏感，高倍率下结论不成立"
+    control_or_report_item: "报告 C-rate 全集并给出高倍率数据；填写期刊 battery checklist"
+    standard_source:
+      title: "Standardized Battery Reporting Guidelines（Battery Checklist）"
+      venue: "Joule"
+      year: 2021
+      locator: "S2542-4351(20)30625-5，Joule 2021, 5, 1–2, A. K. Stephan；另见 An Experimental Checklist for Reporting Battery Performances, ACS Energy Letters, 10.1021/acsenergylett.1c00870"
+      access: paywalled
+    verification_status: needs_primary_check
+    numbers_to_verify:
+      - "Joule Battery Checklist 的确切标题、年份与提交时触发条件"
+      - "低倍率与高倍率容量保持率的具体对照数字"
+    operator_fit: [OP8_primary_document_raid]
+
+  # ================= chemistry =================
+
+  CF_chem_tof_active_sites:
+    discipline: chemistry
+    reported_metric: "TOF / TON（转换频率、转换数）"
+    confound: "表面活性位点数未知或归一化基准不同，使跨实验室数字不可比"
+    control_or_report_item: "报告活性位点计数方法；明确 TON / TOR / TOF 三者用的是哪一个定义"
+    standard_source:
+      title: "Reporting of Reactivity for Heterogeneous Photocatalysis"
+      venue: "ACS Catalysis"
+      year: null
+      locator: "10.1021/cs4005979"
+      access: paywalled
+    verification_status: needs_primary_check
+    numbers_to_verify:
+      - "发表年份"
+      - "TON / TOR / TOF 三者定义差异的原文表述"
+    operator_fit: [OP2_term_inflation_audit, OP8_primary_document_raid]
+
+  CF_chem_aqy_definition:
+    discipline: chemistry
+    reported_metric: "表观量子产率（apparent quantum yield / efficiency）"
+    confound: "分母取入射光子还是被吸收光子的定义分歧，导致跨实验室结果不可比"
+    control_or_report_item: "报告光子通量测定方法与所用 QY 定义"
+    standard_source:
+      title: "Photocatalytic Activity: Experimental Features to Report in Heterogeneous Photocatalysis"
+      venue: "Materials (MDPI)"
+      year: 2018
+      locator: "10.3390/ma11101990"
+      access: open
+    verification_status: needs_primary_check
+    numbers_to_verify:
+      - "『QY 常被错用为事件速率与反应器外壁入射光子之比』的原文表述"
+    operator_fit: [OP2_term_inflation_audit]
+
+  CF_chem_mass_transport:
+    discipline: chemistry
+    reported_metric: "反应速率或转化率提升"
+    confound: "传质 / 传热限制改善，而非催化剂本征活性提升"
+    control_or_report_item: "变搅拌速率与变粒径实验，证明数据落在动力学控制区"
+    standard_source:
+      title: "待补：需锁定一份公开的多相催化 best-practice 指南（如 ACS Catalysis 或 Nature Catalysis 社论）"
+      venue: null
+      year: null
+      locator: null
+      access: null
+    verification_status: source_incomplete
+    numbers_to_verify: []
+    operator_fit: [OP1_constant_falsified]
+
+  # ================= materials =================
+
+  CF_mat_2d_substrate_history:
+    discipline: materials
+    reported_metric: "二维材料的电学 / 光学 / 力学性质"
+    confound: "衬底效应、转移工艺、环境暴露史、样品间差异"
+    control_or_report_item: "报告衬底材料、转移流程、暴露史与样品数量"
+    standard_source:
+      title: "Recommendations and tools to enable reproducibility in 2D materials research"
+      venue: "arXiv"
+      year: 2024
+      locator: "arXiv:2409.18994"
+      access: open
+    verification_status: needs_primary_check
+    numbers_to_verify:
+      - "论文标题、作者、年份"
+      - "其列出的具名混杂因素与推荐报告项清单（本条目前基于检索摘要，PDF 未成功解析）"
+    operator_fit: [OP8_primary_document_raid, OP1_constant_falsified]
+
+  CF_mat_batch_impurity:
+    discipline: materials
+    reported_metric: "掺杂或改性带来的性能提升"
+    confound: "原料批次杂质或痕量金属带来的催化 / 电化学活性"
+    control_or_report_item: "独立批次重复；ICP-MS 等元素分析给出杂质上限"
+    standard_source:
+      title: "待补：需锁定一份公开的材料表征报告规范"
+      venue: null
+      year: null
+      locator: null
+      access: null
+    verification_status: source_incomplete
+    numbers_to_verify: []
+    operator_fit: [OP1_constant_falsified]
+
+  CF_mat_normalization_basis:
+    discipline: materials
+    reported_metric: "归一化后的性能指标"
+    confound: "归一化基准选择（按质量 / 按面积 / 按体积 / 按活性位点）改变结论排序"
+    control_or_report_item: "同时报告多个归一化基准，并说明哪个对应目标应用"
+    standard_source:
+      title: "Photocatalytic Activity: Experimental Features to Report in Heterogeneous Photocatalysis"
+      venue: "Materials (MDPI)"
+      year: 2018
+      locator: "10.3390/ma11101990（归一化论证可跨领域引用，但引用时须说明原文语境为光催化）"
+      access: open
+    verification_status: needs_primary_check
+    numbers_to_verify:
+      - "『按克催化剂归一化不反映结构-活性关系』的原文表述"
+    operator_fit: [OP2_term_inflation_audit]
+
+  # ================= physics =================
+
+  CF_phys_classical_baseline:
+    discipline: physics
+    reported_metric: "量子优势 / beyond-classical 声明"
+    confound: "对照的经典基线不是当前最强经典算法；张量网络等方法随后追上或反超"
+    control_or_report_item: "对照当前最优经典模拟，并说明所用基准（如 Linear XEB）的可 spoof 性边界"
+    standard_source:
+      title: "Classically Spoofing System Linear Cross Entropy Score Benchmarking"
+      venue: "arXiv"
+      year: 2024
+      locator: "arXiv:2405.00789；另见 Flatiron Institute 张量网络工作对 2025-03 D-Wave Advantage2 声明的重新基线"
+      access: open
+    verification_status: needs_primary_check
+    numbers_to_verify:
+      - "Linear XEB 硬度所依赖的猜想在 sublinear depth 已被反驳的准确表述"
+      - "D-Wave Advantage2 声明的时间、量子比特数与被重新基线的具体范围"
+    operator_fit: [OP4_measurement_collapse, OP2_term_inflation_audit]
+
+  CF_phys_background_subtraction:
+    discipline: physics
+    reported_metric: "电阻降为零等相变观测量"
+    confound: "背景扣除方法未披露，或所报电阻的确定方法与原始数据不对应"
+    control_or_report_item: "公开原始数据与扣除流程，使第三方可从原始数据重算"
+    standard_source:
+      title: "待补：需锁定一份公开的凝聚态测量数据披露规范或期刊 data availability 政策"
+      venue: null
+      year: null
+      locator: null
+      access: null
+    verification_status: source_incomplete
+    numbers_to_verify: []
+    operator_fit: [OP8_primary_document_raid]
+    guard: |
+      本条只能写成"数据披露与重算的方法学问题"。绝不可写成任何具体研究者的
+      造假案 —— 会直接触发 pillars.yml 的 academic integrity exclude，且违反对外红线。
+
+  CF_phys_strain_inhomogeneity:
+    discipline: physics
+    reported_metric: "新物态或新相的信号"
+    confound: "样品应变、不均匀性或衬底效应产生的测量伪影"
+    control_or_report_item: "空间分辨表征 + 多样品复现，报告样品间差异"
+    standard_source:
+      title: "待补"
+      venue: null
+      year: null
+      locator: null
+      access: null
+    verification_status: source_incomplete
+    numbers_to_verify: []
+    operator_fit: [OP1_constant_falsified]
+
+  # ================= computing =================
+
+  CF_comp_data_leakage:
+    discipline: computing
+    reported_metric: "模型在留出集上的性能"
+    confound: "数据泄漏，共八类，从教科书级错误到开放研究问题"
+    control_or_report_item: "填写 model info sheet，逐类排除八种泄漏"
+    standard_source:
+      title: "Leakage and the reproducibility crisis in machine-learning-based science"
+      venue: "Patterns"
+      year: 2023
+      locator: "S2666-3899(23)00159-9；预印本 arXiv:2207.07048；作者 Sayash Kapoor, Arvind Narayanan"
+      access: open
+    verification_status: needs_primary_check
+    numbers_to_verify:
+      - "17 个领域、294 篇论文受影响"
+      - "八类泄漏的具体分类名称"
+    operator_fit: [OP8_primary_document_raid, OP9_source_collapse_parable]
+
+  CF_comp_tuning_budget:
+    discipline: computing
+    reported_metric: "新方法相对基线的提升"
+    confound: "两侧超参搜索预算不对等——新方法调够了，基线没调"
+    control_or_report_item: "报告双方各自的搜索预算、搜索空间与选择准则"
+    standard_source:
+      title: "待补：需锁定一份公开的 ML 基线调参报告规范（NeurIPS reproducibility checklist 或同类）"
+      venue: null
+      year: null
+      locator: null
+      access: null
+    verification_status: source_incomplete
+    numbers_to_verify: []
+    operator_fit: [OP4_measurement_collapse]
+
+  CF_comp_benchmark_contamination:
+    discipline: computing
+    reported_metric: "评测集分数"
+    confound: "评测集与训练数据重叠（污染），分数不反映泛化"
+    control_or_report_item: "报告去污染检查方法与命中率"
+    standard_source:
+      title: "待补：需锁定一份公开的污染检测报告规范"
+      venue: null
+      year: null
+      locator: null
+      access: null
+    verification_status: source_incomplete
+    numbers_to_verify: []
+    operator_fit: [OP4_measurement_collapse]
+
+# ---------------------------------------------------------------------------
+# v1 覆盖度自查（自我净化口径）
+#
+# 18 条种子中：
+#   verified                : 0 条  —— 无任何条目已完成一手核实
+#   needs_primary_check     : 11 条 —— 有已发表锚定源，数字待核到一手
+#   source_incomplete       : 7 条  —— 结构成立但尚未锁定公开标准，不得进入排期
+#
+# 弃选口径：
+#   source_incomplete 的 7 条禁止进 draft。它们留在表内是为了标记"这条值得补源"，
+#   而不是可用选题。补到公开标准后改为 needs_primary_check 才可排期。
+#
+# 已知偏斜：
+#   energy 与 life_science 锚定最实（各 2 条有开放或明确一手源），
+#   physics 与 materials 最弱（各仅 1 条）。下一轮补源优先这两科。
+#   化学的两条 open 源均为光催化语境，跨领域引用时必须说明原文语境。
+# ---------------------------------------------------------------------------
