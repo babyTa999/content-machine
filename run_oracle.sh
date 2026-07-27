@@ -4,6 +4,12 @@
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+CANONICAL_REPO="/Users/admin/Apodex/内容/content-machine"
+if [ "$HERE" != "$CANONICAL_REPO" ]; then
+  echo "REFUSED: content-machine may only run from $CANONICAL_REPO" >&2
+  echo "Current path: $HERE" >&2
+  exit 78
+fi
 PY="${APODEX_CONTENT_PY:-$HOME/.agent-reach-venv/bin/python}"
 DATE="$(date +%F)"
 PERSONA="$HERE/personas/选题judge-X.md"
