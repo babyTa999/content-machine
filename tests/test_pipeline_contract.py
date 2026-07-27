@@ -181,6 +181,25 @@ class ProductLedContractTest(unittest.TestCase):
         self.assertEqual(events[0]["object_type"], "canonical_event")
         self.assertEqual(events[0]["mention_count"], 2)
 
+    def test_query_provenance_is_not_an_intent_match(self) -> None:
+        event = candidate("evt_query_noise")
+        event["title"] = "Unrelated personal opinion"
+        event["text"] = "A personal anecdote with no qualifying event."
+        event["provenance"] = [{"editorial_intent_id": "EI5_fragmented_record_changes_case"}]
+        hints = score.editorial_intent_hints(event, self.intents)
+        self.assertEqual(hints, [])
+
+    def test_each_active_intent_contributes_one_rotating_query(self) -> None:
+        now = __import__("datetime").datetime(2026, 7, 27, tzinfo=__import__("datetime").timezone.utc)
+        queries = collect._editorial_intent_queries(now)
+        active = {
+            intent_id
+            for intent_id, definition in self.intents["intents"].items()
+            if definition.get("status") == "active"
+        }
+        self.assertEqual({intent_id for intent_id, _ in queries}, active)
+        self.assertEqual(len(queries), len(active))
+
     def test_offline_cli_round_trip(self) -> None:
         with tempfile.TemporaryDirectory(prefix="apodex-contract-") as temp:
             directory = Path(temp)

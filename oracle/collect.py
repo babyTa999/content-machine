@@ -423,13 +423,15 @@ def _flatten_queries(groups: Any) -> list[tuple[str, str]]:
     return [("default", str(query)) for query in groups or []]
 
 
-def _editorial_intent_queries() -> list[tuple[str, str]]:
+def _editorial_intent_queries(now: dt.datetime) -> list[tuple[str, str]]:
     configured = load_yaml(REPO / "config" / "editorial_intents.yml")
     queries: list[tuple[str, str]] = []
     for intent_id, definition in (configured.get("intents") or {}).items():
         if definition.get("status") != "active":
             continue
-        for query in ((definition.get("retrieval") or {}).get("x_queries") or []):
+        available = (definition.get("retrieval") or {}).get("x_queries") or []
+        if available:
+            query = available[now.date().toordinal() % len(available)]
             queries.append((str(intent_id), str(query)))
     return queries
 
@@ -439,7 +441,7 @@ def collect_x_search(now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str, An
     interval = float(cfg.get("request_interval_s", 2.0))
     lang = str(cfg.get("lang", "en"))
     excluded = [str(item) for item in cfg.get("exclude") or []]
-    queries = _editorial_intent_queries()
+    queries = _editorial_intent_queries(now)
     run_limit = min(int(cfg.get("intent_groups_per_run", len(queries))), len(queries))
     start = now.date().toordinal() % len(queries) if queries else 0
     selected = [queries[(start + offset) % len(queries)] for offset in range(run_limit)]

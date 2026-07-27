@@ -305,11 +305,6 @@ def editorial_intent_hints(candidate: dict[str, Any], intents: dict[str, Any]) -
             candidate.get("event_summary"), candidate.get("title"), candidate.get("text")
         )
     ).lower()
-    explicit = {
-        str(item.get("editorial_intent_id"))
-        for item in candidate.get("provenance") or []
-        if item.get("editorial_intent_id")
-    }
     scored: list[tuple[int, str]] = []
     for intent_id, definition in (intents.get("intents") or {}).items():
         if definition.get("status") != "active":
@@ -318,8 +313,6 @@ def editorial_intent_hints(candidate: dict[str, Any], intents: dict[str, Any]) -
             1 for trigger in definition.get("event_triggers") or []
             if str(trigger).lower() in text
         )
-        if intent_id in explicit:
-            hits += 2
         if hits:
             scored.append((hits, str(intent_id)))
     return [intent_id for _, intent_id in sorted(scored, reverse=True)]
