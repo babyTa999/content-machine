@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Oracle collection and deterministic enrichment for the science content pipeline.
+"""Oracle collection and deterministic enrichment for the product-led content pipeline.
 
 All external signals are normalized into one candidate schema. X and Reddit stay
 read-only through safe-social. Internal materials are never read or persisted here.
@@ -37,6 +37,10 @@ UA = "Mozilla/5.0 content-machine/2.0"
 SOURCE_HEALTH: dict[str, dict[str, Any]] = {}
 
 
+class XSourceHalt(RuntimeError):
+    """Stop remaining X paths after an authentication or rate-limit failure."""
+
+
 def load_yaml(path: Path) -> dict[str, Any]:
     import yaml
 
@@ -66,6 +70,21 @@ def _run_safe_json(args: list[str], label: str, timeout: int = 90) -> Any:
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or f"exit {result.returncode}").strip()
         _health(label, ok=False, error=detail)
+        lowered = detail.lower()
+        if label.startswith("x_") and (
+            "rate_limited" in lowered
+            or "rate limited" in lowered
+            or "http 429" in lowered
+            or "could not authenticate" in lowered
+            or "unable to verify x identity" in lowered
+            or "http 401" in lowered
+        ):
+            reason = (
+                "authentication_failed"
+                if "401" in lowered or "authenticate" in lowered or "verify x identity" in lowered
+                else "rate_limited"
+            )
+            raise XSourceHalt(reason)
         raise RuntimeError(detail[:500])
     raw = result.stdout.lstrip()
     try:
@@ -185,6 +204,9 @@ def make_signal(
     lang: str | None = "en",
     known_author: bool = False,
     institution: bool = False,
+    evidence_role: str | None = None,
+    signal_group: str | None = None,
+    lead_only: bool = False,
 ) -> dict[str, Any]:
     canonical = _canonical_url(url)
     clean_text = _normalized_text(text)
@@ -206,7 +228,7 @@ def make_signal(
         "external_id": str(external_id or ""),
         "platform": platform,
         "source": platform,
-        "source_role": "discovery",
+        "source_role": evidence_role or "discovery",
         "source_path": source_path,
         "discovery_paths": [source_path],
         "source_mode": source_mode,
@@ -228,10 +250,14 @@ def make_signal(
         "metrics": metric_values,
         "engagement": engagement,
         "provenance": [provenance or {}],
-        "context": context or {},
-        "domain_hints": [],
-        "research_task_hints": [],
-        "column_hints": [],
+        "context": {
+            **(context or {}),
+            "evidence_role": evidence_role,
+            "signal_group": signal_group,
+            "lead_only": lead_only,
+        },
+        "problem_shape_hints": [],
+        "thesis_hints": [],
         "action_hints": _action_hints(platform),
     }
 
@@ -357,7 +383,11 @@ def collect_x_watchlist(watch_cfg: dict[str, Any], now: dt.datetime, cfg: dict[s
     output: list[dict[str, Any]] = []
     limit = int(cfg.get("posts_per_handle", 12))
     interval = float(cfg.get("request_interval_s", 1.2))
-    for handle, tier, institution in _watch_handles(watch_cfg):
+    handles = _watch_handles(watch_cfg)
+    run_limit = min(int(cfg.get("handles_per_run", len(handles))), len(handles))
+    start = now.date().toordinal() % len(handles) if handles else 0
+    selected = [handles[(start + offset) % len(handles)] for offset in range(run_limit)]
+    for handle, tier, institution in selected:
         try:
             posts = _run_safe_json(
                 [SAFE_SOCIAL, "x", "user-posts", handle, "-n", str(limit), "--json"],
@@ -379,6 +409,8 @@ def collect_x_watchlist(watch_cfg: dict[str, Any], now: dt.datetime, cfg: dict[s
                     institution=institution,
                 )
             )
+        except XSourceHalt:
+            raise
         except Exception as exc:
             print(f"  [x_watchlist:{handle}] ERR {exc}")
         time.sleep(interval)
@@ -396,7 +428,11 @@ def collect_x_search(now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str, An
     interval = float(cfg.get("request_interval_s", 2.0))
     lang = str(cfg.get("lang", "en"))
     excluded = [str(item) for item in cfg.get("exclude") or []]
-    for group, query in _flatten_queries(cfg.get("queries")):
+    queries = _flatten_queries(cfg.get("queries"))
+    run_limit = min(int(cfg.get("query_groups_per_run", len(queries))), len(queries))
+    start = now.date().toordinal() % len(queries) if queries else 0
+    selected = [queries[(start + offset) % len(queries)] for offset in range(run_limit)]
+    for group, query in selected:
         for mode, mode_cfg in (cfg.get("modes") or {}).items():
             args = [SAFE_SOCIAL, "x", "search", query, "--type", str(mode), "--lang", lang]
             for item in excluded:
@@ -417,6 +453,8 @@ def collect_x_search(now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str, An
                         min_engagement=int(mode_cfg.get("min_engagement", 0)),
                     )
                 )
+            except XSourceHalt:
+                raise
             except Exception as exc:
                 print(f"  [x_query:{mode}:{query[:30]}] ERR {exc}")
             time.sleep(interval)
@@ -466,6 +504,8 @@ def collect_x_conversation(watch_cfg: dict[str, Any], now: dt.datetime, cfg: dic
                     min_engagement=int(cfg.get("min_engagement", 1)),
                 )
             )
+        except XSourceHalt:
+            raise
         except Exception as exc:
             print(f"  [x_conversation:{seed}] ERR {exc}")
         time.sleep(interval)
@@ -513,6 +553,8 @@ def collect_x_dynamic(now: dt.datetime, cfg: dict[str, Any], state_cfg: dict[str
                     known_author=False,
                 )
             )
+        except XSourceHalt:
+            raise
         except Exception as exc:
             print(f"  [x_dynamic:{handle}] ERR {exc}")
         time.sleep(interval)
@@ -593,6 +635,8 @@ def collect_reddit(now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str, Any]
                             provenance={"community": sub, "domain": domain, "query": query},
                             context={"subreddit": sub, "domain": domain},
                             lang="en",
+                            evidence_role=str(cfg.get("evidence_role") or "community_case_lead"),
+                            lead_only=bool(cfg.get("lead_only", True)),
                         )
                         signal["age_h"] = round(_age_h(row.get("created_utc"), now), 1) if row.get("created_utc") else None
                         signal["domain_hints"] = [domain]
@@ -605,7 +649,17 @@ def collect_reddit(now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str, Any]
 
 def collect_rss(now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
-    for name, url in (cfg.get("feeds") or {}).items():
+    for name, definition in (cfg.get("feeds") or {}).items():
+        if isinstance(definition, dict):
+            url = str(definition.get("url") or "")
+            evidence_role = str(definition.get("evidence_role") or "reputable_news_lead")
+            signal_group = str(definition.get("signal_group") or "") or None
+        else:
+            url = str(definition)
+            evidence_role = "reputable_news_lead"
+            signal_group = None
+        if not url:
+            continue
         try:
             root = _fetch_xml(str(url))
             items = [element for element in root.iter() if element.tag.rsplit("}", 1)[-1] in {"item", "entry"}]
@@ -632,6 +686,9 @@ def collect_rss(now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str, Any]]:
                     published_at=published,
                     provenance={"feed": name, "feed_url": url},
                     context={"feed": name},
+                    evidence_role=evidence_role,
+                    signal_group=signal_group,
+                    lead_only=bool(cfg.get("lead_only", False)),
                 )
                 signal["age_h"] = round(_age_h(published, now), 1) if _age_h(published, now) is not None else None
                 output.append(signal)
@@ -659,21 +716,74 @@ def collect_google_news(now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str,
                 published = fields.get("pubDate")
                 signal = make_signal(
                     platform="rss",
-                    source_path="google_news_science",
+                    source_path="google_news_signal",
                     url=link,
                     title=title,
                     text=" — ".join(filter(None, [title, summary])),
                     published_at=published,
                     provenance={"query": query},
                     context={"lead_only": True},
+                    evidence_role="reputable_news_lead",
+                    lead_only=True,
                 )
                 signal["age_h"] = round(_age_h(published, now), 1) if _age_h(published, now) is not None else None
                 output.append(signal)
-            _health("google_news_science", ok=True, count=len(items[:per_query]))
+            _health("google_news_signal", ok=True, count=len(items[:per_query]))
         except Exception as exc:
-            _health("google_news_science", ok=False, error=str(exc))
+            _health("google_news_signal", ok=False, error=str(exc))
             print(f"  [google_news:{str(query)[:28]}] ERR {exc}")
         time.sleep(1.2)
+    return output
+
+
+def collect_official_indexes(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract individual current updates from stable first-party index pages."""
+    output: list[dict[str, Any]] = []
+    limit = int(cfg.get("limit_per_page", 20))
+    for name, definition in (cfg.get("pages") or {}).items():
+        url = str((definition or {}).get("url") or "")
+        if not url:
+            continue
+        allowed_hosts = {
+            str(host).lower().removeprefix("www.")
+            for host in (definition.get("allow_hosts") or [])
+        }
+        include_paths = [str(path) for path in definition.get("include_paths") or []]
+        try:
+            content = _jina_read(url, 30000)
+            seen: set[str] = set()
+            for match in re.finditer(r"\[([^\]]{8,})\]\(([^\)]+)\)", content):
+                title = _strip_html(match.group(1)).strip()
+                link = urllib.parse.urljoin(url, match.group(2).strip())
+                parsed = urllib.parse.urlparse(link)
+                host = parsed.netloc.lower().removeprefix("www.")
+                if allowed_hosts and host not in allowed_hosts:
+                    continue
+                if include_paths and not any(parsed.path.startswith(path) for path in include_paths):
+                    continue
+                canonical = _canonical_url(link)
+                if canonical in seen or canonical == _canonical_url(url):
+                    continue
+                seen.add(canonical)
+                output.append(
+                    make_signal(
+                        platform="web",
+                        source_path="official_update",
+                        url=link,
+                        title=title,
+                        text=f"[{name}] {title}",
+                        provenance={"index": url, "program": name},
+                        evidence_role=str(definition.get("evidence_role") or "official_record"),
+                        signal_group=str(definition.get("signal_group") or "") or None,
+                    )
+                )
+                if len(seen) >= limit:
+                    break
+            _health(f"official_{str(name).lower()}", ok=True, count=len(seen))
+        except Exception as exc:
+            _health(f"official_{str(name).lower()}", ok=False, error=str(exc))
+            print(f"  [official:{name}] ERR {exc}")
+        time.sleep(0.8)
     return output
 
 
@@ -729,6 +839,8 @@ def collect_metaculus(cfg: dict[str, Any]) -> list[dict[str, Any]]:
                     text=match.group(1).strip(),
                     title=match.group(1).strip(),
                     provenance={"index": url},
+                    evidence_role="primary_report",
+                    signal_group="conditional_decision",
                 )
             )
         _health("prediction_bank", ok=True, count=len(output))
@@ -741,12 +853,36 @@ def collect_metaculus(cfg: dict[str, Any]) -> list[dict[str, Any]]:
 
 def collect_challenges(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
+    generic_titles = {
+        "report a website issue", "directory of u.s. government agencies and departments",
+        "the u.s. and its government", "government benefits", "explore all topics and services",
+        "partner with usagov", "branches of government", "feature articles", "website usage data",
+        "news + insights", "reports and publications", "join the movement", "board of directors",
+        "meet the community", "all focus areas", "current challenges", "currently fundraising for",
+    }
+
+    def is_detail(name: str, title: str, link: str) -> bool:
+        lowered_title = title.lower()
+        parsed = urllib.parse.urlparse(link)
+        path = parsed.path.rstrip("/")
+        if lowered_title in generic_titles or not path:
+            return False
+        if name == "USAgov":
+            return path.startswith("/challenges/") and path not in {"/challenges"}
+        if name == "XPRIZE":
+            return path.startswith("/competitions/") and path not in {"/competitions"}
+        if name == "ARPA-H":
+            return "/research-and-funding/" in path and path != "/research-and-funding"
+        return False
+
     for name, url in (cfg.get("pages") or {}).items():
         try:
             content = _jina_read(str(url), 10000)
             for match in re.finditer(r"\[([^\]]{15,})\]\((https?://[^\)]+)\)", content):
                 title, link = match.group(1).strip(), match.group(2).strip()
                 if link.lower().endswith((".svg", ".png", ".jpg", ".jpeg")):
+                    continue
+                if not is_detail(str(name), title, link):
                     continue
                 output.append(
                     make_signal(
@@ -756,6 +892,8 @@ def collect_challenges(cfg: dict[str, Any]) -> list[dict[str, Any]]:
                         title=title,
                         text=f"[{name}] {title}",
                         provenance={"index": url, "program": name},
+                        evidence_role="official_record",
+                        signal_group="decision_window",
                     )
                 )
             _health(f"challenge_{str(name).lower()}", ok=True)
@@ -795,37 +933,64 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
     enabled = lambda name: (sources.get(name) or {}).get("status") == "auto"
     signals: list[dict[str, Any]] = []
 
-    if enabled("x_watchlist") and not args.no_x:
-        print("collect: X path 1/4 watchlist ...")
-        signals.extend(collect_x_watchlist(watch, now, sources["x_watchlist"]))
-    if enabled("x_keyword_search") and not args.no_x:
-        print("collect: X path 2/4 task queries (Top + Latest) ...")
-        signals.extend(collect_x_search(now, sources["x_keyword_search"]))
-    if enabled("x_conversation_graph") and not args.no_x:
-        print("collect: X path 3/4 conversation graph ...")
-        signals.extend(collect_x_conversation(watch, now, sources["x_conversation_graph"]))
-    if enabled("x_dynamic_watch") and not args.no_x:
-        print("collect: X path 4/4 dynamic watch ...")
-        signals.extend(collect_x_dynamic(now, sources["x_dynamic_watch"], sources.get("state") or {}))
-    if enabled("reddit_discovery") and not args.no_reddit:
+    if not args.no_x:
+        try:
+            print("collect: X identity preflight ...")
+            identity = _run_safe_json([SAFE_SOCIAL, "x", "whoami", "--json"], "x_identity")
+            username = str(((identity or {}).get("user") or {}).get("username") or "")
+            if username.lower() != "kw90qk":
+                _health("x_identity", ok=False, error=f"unexpected username: {username or 'missing'}")
+                raise XSourceHalt("authentication_failed")
+            if enabled("x_watchlist"):
+                print("collect: X path 1/4 watchlist ...")
+                signals.extend(collect_x_watchlist(watch, now, sources["x_watchlist"]))
+            if enabled("x_keyword_search"):
+                print("collect: X path 2/4 problem-shape queries (Top + Latest) ...")
+                signals.extend(collect_x_search(now, sources["x_keyword_search"]))
+            if enabled("x_conversation_graph"):
+                print("collect: X path 3/4 conversation graph ...")
+                signals.extend(collect_x_conversation(watch, now, sources["x_conversation_graph"]))
+            if enabled("x_dynamic_watch"):
+                print("collect: X path 4/4 dynamic watch ...")
+                signals.extend(collect_x_dynamic(now, sources["x_dynamic_watch"], sources.get("state") or {}))
+        except XSourceHalt as exc:
+            _health("x_collection", ok=False, error=str(exc))
+            print(f"collect: X halted ({exc}); continuing non-X sources")
+    if enabled("reddit_discovery") and not args.no_reddit and not args.only_x:
         print("collect: Reddit Top + New ...")
         signals.extend(collect_reddit(now, sources["reddit_discovery"]))
-    if enabled("science_rss"):
+    if enabled("science_rss") and not args.only_x:
         signals.extend(collect_rss(now, sources["science_rss"]))
-    if enabled("science_news"):
-        signals.extend(collect_google_news(now, sources["science_news"]))
-    if enabled("prediction_banks"):
+    if enabled("signal_news") and not args.only_x:
+        signals.extend(collect_google_news(now, sources["signal_news"]))
+    if enabled("official_indexes") and not args.only_x:
+        signals.extend(collect_official_indexes(sources["official_indexes"]))
+    if enabled("official_feeds") and not args.only_x:
+        signals.extend(collect_rss(now, sources["official_feeds"]))
+    if enabled("prediction_banks") and not args.only_x:
         signals.extend(collect_metaculus(sources["prediction_banks"]))
-    if enabled("official_challenges"):
+    if enabled("official_challenges") and not args.only_x:
         signals.extend(collect_challenges(sources["official_challenges"]))
-    if enabled("hackernews"):
+    if enabled("hackernews") and not args.only_x:
         signals.extend(collect_hackernews(now, sources["hackernews"]))
+
+    if args.merge_base:
+        with open(args.merge_base, encoding="utf-8") as handle:
+            base = json.load(handle)
+        current_health = dict(SOURCE_HEALTH)
+        signals = [
+            candidate for candidate in base.get("candidates") or []
+            if candidate.get("platform") != "x"
+        ] + signals
+        SOURCE_HEALTH.clear()
+        SOURCE_HEALTH.update(base.get("source_health") or {})
+        SOURCE_HEALTH.update(current_health)
 
     candidates, dropped = merge_signals(signals)
     platform_counts = Counter(item["platform"] for item in candidates)
     path_counts = Counter(path for item in candidates for path in item["discovery_paths"])
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "collected_at": now.isoformat(),
         "count": len(candidates),
         "deduped_in_run": dropped,
@@ -894,11 +1059,12 @@ def enrich(args: argparse.Namespace) -> dict[str, Any]:
         enriched.append(candidate)
 
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "run_id": queue.get("run_id"),
         "enriched_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "count": len(enriched),
         "source_health": SOURCE_HEALTH,
+        "source_audit": queue.get("source_audit") or {},
         "candidates": enriched,
     }
     with open(args.out, "w", encoding="utf-8") as handle:
@@ -912,9 +1078,13 @@ def main() -> None:
     parser.add_argument("--out")
     parser.add_argument("--no-x", action="store_true")
     parser.add_argument("--no-reddit", action="store_true")
+    parser.add_argument("--only-x", action="store_true")
+    parser.add_argument("--merge-base")
     parser.add_argument("--enrich", metavar="QUEUE_JSON")
     parser.add_argument("--candidates", metavar="CANDIDATES_JSON")
     args = parser.parse_args()
+    if args.only_x and args.no_x:
+        parser.error("--only-x cannot be combined with --no-x")
     if args.enrich:
         enrich(args)
     else:

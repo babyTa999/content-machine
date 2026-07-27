@@ -299,29 +299,61 @@ def keyword_hints(text: str, groups: dict[str, Any]) -> list[str]:
     return [key for _, key in sorted(scored, reverse=True)]
 
 
-def priority_score(candidate: dict[str, Any], sources: dict[str, Any]) -> float:
-    platform = str(candidate.get("platform") or "web")
-    score = float(((sources.get("recall") or {}).get("source_priority") or {}).get(platform, 0))
+def evidence_role(candidate: dict[str, Any], sources: dict[str, Any]) -> str:
+    context = candidate.get("context") or {}
+    explicit = str(context.get("evidence_role") or candidate.get("source_role") or "")
+    if explicit and explicit != "discovery":
+        return explicit
+    path = str(candidate.get("source_path") or "")
+    rules = sources.get("source_role_rules") or {}
+    if path in rules:
+        return str(rules[path])
+    if path.startswith("official_"):
+        return "official_record"
     authority = candidate.get("authority") or {}
-    score += 3 if authority.get("known_watchlist") else 0
-    score += 2 if authority.get("verified") else 0
+    if candidate.get("platform") == "x" and (
+        authority.get("institution")
+        or authority.get("verified")
+        or authority.get("known_watchlist")
+    ):
+        return "expert_primary_link"
+    if candidate.get("platform") == "reddit":
+        return "community_case_lead"
+    return "anonymous_opinion"
+
+
+def priority_score(candidate: dict[str, Any], sources: dict[str, Any]) -> float:
+    role = evidence_role(candidate, sources)
+    score = float(
+        ((sources.get("recall") or {}).get("source_role_priority") or {}).get(role, 0)
+    )
+    authority = candidate.get("authority") or {}
+    score += 2 if authority.get("known_watchlist") else 0
+    score += 1 if authority.get("verified") else 0
     score += 2 if authority.get("institution") else 0
-    score += min(4.0, math.log1p(max(0, int(candidate.get("engagement") or 0))) / 2)
+    score += min(2.0, math.log1p(max(0, int(candidate.get("engagement") or 0))) / 3)
     age = candidate.get("age_h")
     if isinstance(age, (int, float)):
         score += 2 if age <= 24 else 1 if age <= 96 else 0
     text = str(candidate.get("text") or "").lower()
-    if re.search(r"\b(help|how do|which method|unexpected|conflicting|discrepancy|stuck|failed|next experiment)\b", text):
-        score += 4
-    if "?" in text:
+    if re.search(
+        r"\b(updated guidance|label change|conflicting evidence|no consensus|"
+        r"call for evidence|public consultation|proposed rule|official definition|"
+        r"eligibility criteria|revised estimate|updated assessment)\b",
+        text,
+    ):
+        score += 3
+    if (candidate.get("context") or {}).get("lead_only"):
+        score -= 1
+    if "?" in text and role not in {"paper_abstract_only", "anonymous_opinion"}:
         score += 1
     return round(score, 2)
 
 
 def prefilter(args: argparse.Namespace) -> None:
     raw = load_json(args.raw)
-    if raw.get("schema_version") != 2:
-        raise SystemExit("Expected collect schema_version=2")
+    if raw.get("schema_version") != 3:
+        raise SystemExit("Expected collect schema_version=3")
     pillars = load_yaml(REPO / "config" / "pillars.yml")
     sources = load_yaml(REPO / "config" / "sources.yml")
     state_cfg = sources.get("state") or {}
@@ -344,9 +376,17 @@ def prefilter(args: argparse.Namespace) -> None:
             )
             reason = hard_excluded(candidate, pillars) or duplicate
             text = " ".join(str(value or "") for value in (candidate.get("title"), candidate.get("text")))
-            candidate["domain_hints"] = keyword_hints(text, pillars.get("domains") or {})
-            candidate["research_task_hints"] = keyword_hints(text, pillars.get("research_tasks") or {})
-            candidate["column_hints"] = keyword_hints(text, pillars.get("columns") or {})
+            candidate["problem_shape_hints"] = keyword_hints(
+                text, pillars.get("problem_shapes") or {}
+            )
+            candidate["thesis_hints"] = [
+                thesis_id
+                for thesis_id, definition in (pillars.get("theses") or {}).items()
+                if set(candidate["problem_shape_hints"]).intersection(
+                    definition.get("problem_shapes") or []
+                )
+            ]
+            candidate["evidence_role"] = evidence_role(candidate, sources)
             candidate["priority_score"] = priority_score(candidate, sources)
             observe_candidate(connection, candidate, run_id, observed_at, seen_date, competitors)
             if reason:
@@ -361,7 +401,7 @@ def prefilter(args: argparse.Namespace) -> None:
         connection.close()
     survivors.sort(key=lambda item: (-float(item.get("priority_score") or 0), item["candidate_id"]))
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "stage": "recall_input",
         "run_id": run_id,
         "collected_at": observed_at,
@@ -431,7 +471,7 @@ def recall_chunks(args: argparse.Namespace) -> None:
     chunks = [candidates[index : index + size] for index in range(0, len(candidates), size)] or [[]]
     for index, rows in enumerate(chunks, start=1):
         payload = {
-            "schema_version": 2,
+            "schema_version": 3,
             "stage": "recall_input_chunk",
             "run_id": source.get("run_id"),
             "chunk_index": index,
@@ -465,6 +505,36 @@ def allowed_actions(candidate: dict[str, Any], actions: Any) -> list[str]:
         if definition and platform in (definition.get("platforms") or []):
             valid.append(str(action))
     return sorted(set(valid))
+
+
+def allowed_primary_action(candidate: dict[str, Any], action: Any) -> str:
+    valid = allowed_actions(candidate, [action])
+    if len(valid) != 1:
+        raise SystemExit(
+            f"Judge returned invalid primary_action for {candidate['candidate_id']}: {action}"
+        )
+    return valid[0]
+
+
+def validate_theme_match(
+    row: dict[str, Any], pillars: dict[str, Any], candidate_id: str, column: str | None
+) -> tuple[str, str]:
+    problem_shape_id = str(row.get("problem_shape_id") or "")
+    thesis_id = str(row.get("thesis_id") or "")
+    shapes = pillars.get("problem_shapes") or {}
+    theses = pillars.get("theses") or {}
+    if problem_shape_id not in shapes:
+        raise SystemExit(f"Invalid/missing problem_shape_id for {candidate_id}: {problem_shape_id}")
+    if thesis_id not in theses:
+        raise SystemExit(f"Invalid/missing thesis_id for {candidate_id}: {thesis_id}")
+    thesis = theses[thesis_id]
+    if problem_shape_id not in (thesis.get("problem_shapes") or []):
+        raise SystemExit(
+            f"Problem shape {problem_shape_id} is not backed by thesis {thesis_id}: {candidate_id}"
+        )
+    if column and column not in (thesis.get("allowed_columns") or []):
+        raise SystemExit(f"Thesis {thesis_id} cannot route to {column}: {candidate_id}")
+    return problem_shape_id, thesis_id
 
 
 def record_outcomes(
@@ -511,30 +581,93 @@ def validate_recall(args: argparse.Namespace) -> None:
     judged = load_json_loose(args.judged)
     candidates = {item["candidate_id"]: item for item in source.get("candidates") or []}
     decisions = decision_map(judged, set(candidates), RECALL_STATES, "Recall")
+    pillars = load_yaml(REPO / "config" / "pillars.yml")
+    valid_columns = {
+        column_id
+        for column_id, definition in (pillars.get("columns") or {}).items()
+        if definition.get("scrapable")
+    }
     normalized: list[dict[str, Any]] = []
     for candidate_id, row in decisions.items():
         candidate = candidates[candidate_id]
         cleaned = dict(row)
         cleaned["candidate_id"] = candidate_id
-        cleaned["actions"] = allowed_actions(candidate, row.get("actions"))
-        if cleaned["decision"] == "interaction_only" and not any(
-            action in cleaned["actions"] for action in ("x_reply", "x_quote", "reddit_reply")
-        ):
-            raise SystemExit(f"Recall interaction_only requires a platform-valid interaction action: {candidate_id}")
-        if cleaned["decision"] == "keep_for_enrichment" and not cleaned["actions"]:
-            cleaned["actions"] = ["original_post"]
+        primary_action = row.get("primary_action")
+        if cleaned["decision"] in {"keep_for_enrichment", "interaction_only"}:
+            cleaned["primary_action"] = allowed_primary_action(candidate, primary_action)
+        else:
+            cleaned["primary_action"] = "watch"
+        if cleaned["decision"] == "interaction_only" and cleaned["primary_action"] not in {
+            "x_reply", "x_quote", "reddit_reply"
+        }:
+            raise SystemExit(
+                f"Recall interaction_only requires one platform-valid interaction action: {candidate_id}"
+            )
+        if cleaned["decision"] == "keep_for_enrichment":
+            if cleaned["primary_action"] != "original_post":
+                raise SystemExit(f"Recall original candidate must choose original_post: {candidate_id}")
+            likely_column = str(row.get("likely_column") or "")
+            if likely_column not in valid_columns:
+                raise SystemExit(f"Recall invalid likely_column for {candidate_id}: {likely_column}")
+            problem_shape_id, thesis_id = validate_theme_match(
+                row, pillars, candidate_id, likely_column
+            )
+            cleaned["likely_column"] = likely_column
+            cleaned["problem_shape_id"] = problem_shape_id
+            cleaned["thesis_id"] = thesis_id
+            backing = str(row.get("capability_backing") or "")
+            if backing not in set(pillars.get("capability_backing") or []):
+                raise SystemExit(f"Recall missing capability_backing for {candidate_id}")
+            cleaned["capability_backing"] = backing
         normalized.append(cleaned)
     normalized.sort(key=lambda row: (-float(candidates[row["candidate_id"]].get("priority_score") or 0), row["candidate_id"]))
-    maximum = int((load_yaml(REPO / "config" / "sources.yml").get("recall") or {}).get("max_enrichment_candidates", 32))
+    sources_cfg = load_yaml(REPO / "config" / "sources.yml")
+    recall_cfg = sources_cfg.get("recall") or {}
+    maximum = int(recall_cfg.get("max_enrichment_candidates", 32))
     eligible = [row for row in normalized if row["decision"] in {"keep_for_enrichment", "interaction_only"}]
-    selected = eligible[:maximum]
+
+    def source_bucket(candidate: dict[str, Any]) -> str:
+        platform = str(candidate.get("platform") or "")
+        path = str(candidate.get("source_path") or "")
+        role = evidence_role(candidate, sources_cfg)
+        if platform == "x":
+            return "x"
+        if platform == "reddit":
+            return "community"
+        if role in {"official_record", "institutional_update"} and path not in {
+            "official_challenge"
+        }:
+            return "official_update"
+        if path.startswith("rss_") or path == "google_news_signal":
+            return "rss_news"
+        if path in {"official_challenge", "prediction_bank"}:
+            return "decision_window"
+        if path == "hackernews":
+            return "community"
+        return "rss_news"
+
+    budgets = {str(key): int(value) for key, value in (recall_cfg.get("enrichment_budgets") or {}).items()}
+    selected: list[dict[str, Any]] = []
+    selected_set: set[str] = set()
+    for bucket, budget in budgets.items():
+        matches = [row for row in eligible if source_bucket(candidates[row["candidate_id"]]) == bucket]
+        for row in matches[: max(0, budget)]:
+            selected.append(row)
+            selected_set.add(row["candidate_id"])
+    for row in eligible:
+        if len(selected) >= maximum:
+            break
+        if row["candidate_id"] not in selected_set:
+            selected.append(row)
+            selected_set.add(row["candidate_id"])
+    selected = selected[:maximum]
     selected_ids = [row["candidate_id"] for row in selected]
     selected_set = set(selected_ids)
     for row in normalized:
         row["queued_for_enrichment"] = row["candidate_id"] in selected_set
     run_id = str(source.get("run_id") or "unknown")
     clean = {
-        "schema_version": 2,
+        "schema_version": 3,
         "stage": "recall_decisions",
         "run_id": run_id,
         "counts": {
@@ -545,11 +678,18 @@ def validate_recall(args: argparse.Namespace) -> None:
         "decisions": normalized,
     }
     queue = {
-        "schema_version": 2,
+        "schema_version": 3,
         "stage": "enrichment_queue",
         "run_id": run_id,
         "candidate_ids": selected_ids,
         "decisions": selected,
+        "source_audit": {
+            bucket: {
+                "eligible": sum(source_bucket(candidates[row["candidate_id"]]) == bucket for row in eligible),
+                "queued": sum(source_bucket(candidates[row["candidate_id"]]) == bucket for row in selected),
+            }
+            for bucket in sorted(set(budgets) | {"other"})
+        },
     }
     Path(args.out).write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
     Path(args.queue_out).write_text(json.dumps(queue, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -563,26 +703,61 @@ def validate_recall(args: argparse.Namespace) -> None:
 
 
 def normalize_evidence_decision(
-    candidate: dict[str, Any], row: dict[str, Any], valid_columns: set[str]
+    candidate: dict[str, Any], row: dict[str, Any], pillars: dict[str, Any]
 ) -> dict[str, Any]:
     cleaned = dict(row)
     cleaned["candidate_id"] = candidate["candidate_id"]
-    columns = row.get("columns") if isinstance(row.get("columns"), list) else []
-    cleaned["columns"] = [str(column) for column in columns if str(column) in valid_columns]
-    if len(cleaned["columns"]) != len(columns):
-        raise SystemExit(f"Evidence Judge returned invalid/non-scrapable column: {candidate['candidate_id']}")
-    cleaned["actions"] = allowed_actions(candidate, row.get("actions"))
-    interaction_actions = {"x_reply", "x_quote", "reddit_reply"}
+    valid_columns = {
+        column_id
+        for column_id, definition in (pillars.get("columns") or {}).items()
+        if definition.get("scrapable")
+    }
+    primary_destination = str(row.get("primary_destination") or "")
+    primary_action = row.get("primary_action")
     if cleaned["decision"] == "keep":
-        if not cleaned["columns"]:
-            raise SystemExit(f"Evidence keep requires at least one valid column: {candidate['candidate_id']}")
-        if "original_post" not in cleaned["actions"]:
-            cleaned["actions"].append("original_post")
-    if cleaned["decision"] == "interaction" and not interaction_actions.intersection(cleaned["actions"]):
-        raise SystemExit(f"Evidence interaction requires a platform-valid interaction action: {candidate['candidate_id']}")
+        if primary_destination not in valid_columns:
+            raise SystemExit(
+                f"Evidence keep requires one scrapable primary_destination: {candidate['candidate_id']}"
+            )
+        cleaned["primary_action"] = allowed_primary_action(candidate, primary_action)
+        if cleaned["primary_action"] != "original_post":
+            raise SystemExit(
+                f"Evidence keep must choose original_post only: {candidate['candidate_id']}"
+            )
+        problem_shape_id, thesis_id = validate_theme_match(
+            row, pillars, candidate["candidate_id"], primary_destination
+        )
+        cleaned["problem_shape_id"] = problem_shape_id
+        cleaned["thesis_id"] = thesis_id
+        backing = str(row.get("capability_backing") or "")
+        if backing not in set(pillars.get("capability_backing") or []):
+            raise SystemExit(
+                f"Evidence keep requires capability_backing: {candidate['candidate_id']}"
+            )
+        cleaned["capability_backing"] = backing
+        signal_role = str(row.get("signal_role") or "")
+        if signal_role not in (pillars.get("signal_roles") or {}):
+            raise SystemExit(f"Evidence keep requires valid signal_role: {candidate['candidate_id']}")
+        if primary_destination == "C3" and signal_role != "decision_window":
+            raise SystemExit(
+                f"C3 requires signal_role=decision_window: {candidate['candidate_id']}"
+            )
+        cleaned["signal_role"] = signal_role
+    elif cleaned["decision"] == "interaction":
+        cleaned["primary_destination"] = "C8"
+        cleaned["primary_action"] = allowed_primary_action(candidate, primary_action)
+        if cleaned["primary_action"] not in {"x_reply", "x_quote", "reddit_reply"}:
+            raise SystemExit(
+                f"Evidence interaction requires one interaction action: {candidate['candidate_id']}"
+            )
+    else:
+        cleaned["primary_destination"] = "watch"
+        cleaned["primary_action"] = "watch"
+    if cleaned["decision"] == "keep":
+        cleaned["primary_destination"] = primary_destination
     for field in (
         "source_says", "why_now", "why_apodex", "possible_angle", "inference_boundary",
-        "needs_verification", "maturity", "reason",
+        "needs_verification", "reason", "secondary_note",
     ):
         cleaned[field] = row.get(field) if row.get(field) not in (None, "") else "—"
     cleaned["maturity"] = "Idea"
@@ -613,15 +788,35 @@ def render_report(
     except (ValueError, IndexError):
         date_label = day
     lines = [f"# {date_label}", ""]
-    original_rows = [row for row in rows if row["decision"] == "keep" and "original_post" in row["actions"]]
+    seen_sources: dict[str, str] = {}
+    for row in rows:
+        if row["decision"] not in {"keep", "interaction"}:
+            continue
+        candidate = candidates[row["candidate_id"]]
+        source_key = str(
+            candidate.get("canonical_url")
+            or candidate.get("url")
+            or candidate["candidate_id"]
+        )
+        previous = seen_sources.get(source_key)
+        if previous:
+            raise SystemExit(
+                f"One source may appear only once in the report: {source_key} "
+                f"({previous}, {row['candidate_id']})"
+            )
+        seen_sources[source_key] = row["candidate_id"]
+    original_rows = [
+        row for row in rows
+        if row["decision"] == "keep" and row["primary_action"] == "original_post"
+    ]
     for column_id, definition in columns.items():
-        grouped = [row for row in original_rows if column_id in row["columns"]]
+        grouped = [row for row in original_rows if row["primary_destination"] == column_id]
         if not grouped:
             continue
         lines.extend(
             [
                 f"## {definition['name']}", "",
-                "| 来源 | Source says | Why now | Why Apodex | Possible angle | Inference boundary | Needs verification | 状态 |",
+                "| 来源 | 来源明确说了什么 | 为什么现在值得看 | 为什么适合 Apodex | 可写角度 | 推断边界 | 发布前需核验 | 状态 |",
                 "|---|---|---|---|---|---|---|---|",
             ]
         )
@@ -644,19 +839,18 @@ def render_report(
         grouped = [
             row for row in rows
             if candidates[row["candidate_id"]].get("platform") == platform
-            and valid_actions.intersection(row["actions"])
-            and row["decision"] in {"keep", "interaction"}
+            and row["decision"] == "interaction"
+            and row["primary_action"] in valid_actions
         ]
         if not grouped:
             continue
         lines.extend([f"## {title}", "", "| 来源 | 动作 | 可互动方向 | Apodex 观点 | 边界 | 状态 |", "|---|---|---|---|---|---|"])
         for row in grouped:
             candidate = candidates[row["candidate_id"]]
-            actions = ", ".join(action for action in row["actions"] if action in valid_actions)
             lines.append(
                 "| " + " | ".join(
                     [
-                        _source(candidate), _cell(actions), _cell(row["possible_angle"]),
+                        _source(candidate), _cell(row["primary_action"]), _cell(row["possible_angle"]),
                         _cell(row["why_apodex"]), _cell(row["inference_boundary"]), "Idea",
                     ]
                 ) + " |"
@@ -665,11 +859,24 @@ def render_report(
     watch = [row for row in rows if row["decision"] == "watch"]
     rejected = [row for row in rows if row["decision"] == "reject"]
     if watch:
-        lines.extend(["## Watch", "", "| 来源 | 原因 |", "|---|---|"])
+        lines.extend(["## 观察", "", "| 来源 | 原因 |", "|---|---|"])
         for row in watch:
             lines.append(f"| {_source(candidates[row['candidate_id']])} | {_cell(row['reason'])} |")
         lines.append("")
-    lines.extend(["## Judge 淘汰", "", "| 来源 | 原因 |", "|---|---|"])
+    audit = source.get("source_audit") or {}
+    if audit:
+        labels = {
+            "x": "X",
+            "community": "Community leads",
+            "official_update": "Official updates",
+            "rss_news": "RSS / News",
+            "decision_window": "Decision windows",
+        }
+        lines.extend(["## 来源覆盖", "", "| 来源组 | Recall 可 enrichment | 实际进入终审 |", "|---|---:|---:|"])
+        for bucket, counts in audit.items():
+            lines.append(f"| {labels.get(bucket, bucket)} | {counts.get('eligible', 0)} | {counts.get('queued', 0)} |")
+        lines.append("")
+    lines.extend(["## 终审淘汰", "", "| 来源 | 原因 |", "|---|---|"])
     for row in rejected:
         lines.append(f"| {_source(candidates[row['candidate_id']])} | {_cell(row['reason'])} |")
     lines.append("")
@@ -682,15 +889,14 @@ def render(args: argparse.Namespace) -> None:
     candidates = {item["candidate_id"]: item for item in source.get("candidates") or []}
     decisions = decision_map(judged, set(candidates), EVIDENCE_STATES, "Evidence")
     pillars = load_yaml(REPO / "config" / "pillars.yml")
-    valid_columns = {
-        column_id for column_id, definition in (pillars.get("columns") or {}).items()
-        if definition.get("scrapable")
-    }
-    normalized = [normalize_evidence_decision(candidates[candidate_id], row, valid_columns) for candidate_id, row in decisions.items()]
+    normalized = [
+        normalize_evidence_decision(candidates[candidate_id], row, pillars)
+        for candidate_id, row in decisions.items()
+    ]
     normalized.sort(key=lambda row: (-float(candidates[row["candidate_id"]].get("priority_score") or 0), row["candidate_id"]))
     run_id = str(source.get("run_id") or "unknown")
     clean = {
-        "schema_version": 2,
+        "schema_version": 3,
         "stage": "evidence_decisions",
         "run_id": run_id,
         "counts": {state: sum(row["decision"] == state for row in normalized) for state in EVIDENCE_STATES},

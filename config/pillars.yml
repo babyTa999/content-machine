@@ -1,76 +1,181 @@
-# Science-track 内容栏目、领域、研究任务与动作定义。
-# 栏目回答“讲什么”，action 回答“在哪里做什么”；source 不再强制决定栏目。
+# Product-led editorial contract.
+# External signals may supply timing, stakes, conflict, or a real case. They may
+# not invent an Apodex thesis. Every retained original must match one problem
+# shape and one owned thesis below.
 
 columns:
   C1:
-    name: Problem-aware｜难题求解
+    name: "Problem-aware｜现实中的难题形态"
     scrapable: true
-    target_signal: [心智, 收藏, 曝光]
-    keywords: [open problem, hard problem, experimental design, next experiment, uncertainty, conflicting evidence, decision]
-
+    purpose: "用当下真实事件呈现官网同构问题：多来源、条件化、无单一现成答案。"
   C2:
-    name: Product-aware｜验证拆解 / 反 AI 幻觉
+    name: "Design Choice｜为什么 Apodex 这样设计"
     scrapable: true
-    target_signal: [收藏, 评论]
-    keywords: [unsupported conclusion, evidence mismatch, source mismatch, wrong result, overclaim, verification gap, missing evidence]
-
+    purpose: "从技术报告中的已确认设计选择出发；外部信号只提供 timing、案例或 stakes。"
   C3:
-    name: Before It Becomes Official｜定稿之前
+    name: "Before It Becomes Official｜定稿之前"
     scrapable: true
-    target_signal: [心智, 收藏]
-    keywords: [draft, consultation, request for comment, open funding, proposed standard, evidence gap, research recommendation]
-
+    purpose: "只接仍开放的 draft、consultation、call for evidence、advisory 或 proposed rule。"
   C4:
-    name: Worldview｜Big Idea 世界观
+    name: "Worldview｜难题应该怎样被解决"
     scrapable: false
-    note: 内部物料仅由 Selene 提供；repo 不保存内部内容。
-
+    purpose: "Selene 供料的长期世界观；外部管线不得自动生成。"
   C5:
-    name: Claim vs Record｜公开说法 vs 正式记录
-    scrapable: true
-    target_signal: [收藏, 评论]
-    keywords: [official record, registry, stated endpoint, disclosed result, updated status, public claim]
-
-  C6:
-    name: Social Proof｜#ApodexSolvers
+    name: "Claim vs Record｜公开说法 vs 正式记录"
     scrapable: false
-    note: 内部 UGC 仅由 Selene 提供并确认公开范围。
-
+    paused: true
+    purpose: "本阶段暂停，避免重新滑向 proof、benchmark 与泛 fact-check。"
+  C6:
+    name: "Social Proof｜#ApodexSolvers"
+    scrapable: false
+    purpose: "只接 Selene 确认可公开的 demo、用户案例或内部物料。"
   C8:
-    name: Engagement｜圈内接话
-    scrapable: true
-    target_signal: [曝光, profile_click]
-    note: 展示层栏目；底层 action 仍拆成 X reply、X quote、Reddit reply 和原创选题。
+    name: "Engagement｜圈内接话"
+    scrapable: false
+    purpose: "仅为互动归宿；不能与原创栏目同时出现。"
 
-domains:
-  life_sciences:
-    keywords: [biology, biomedical, neuroscience, genomic, genetics, protein, cell, assay, clinical, drug, therapeutic]
-  chemistry_materials_energy:
-    keywords: [chemistry, chemical, catalyst, materials, battery, energy, synthesis, molecule]
-  scientific_computing:
-    keywords: [scientific computing, simulation, analysis pipeline, dataset, statistics, model, database, software]
-  physics_earth_space:
-    keywords: [physics, astronomy, climate, earth science, geoscience, measurement, observatory]
-  engineering_robotics:
-    keywords: [engineering, robotics, autonomous lab, instrument, control system, hardware]
+problem_shapes:
+  PS1_evidence_shift:
+    name: "新证据改变原来的答案"
+    keywords:
+      - updated guidance
+      - label change
+      - new safety information
+      - revised estimate
+      - updated assessment
+      - warning added
+      - warning removed
+  PS2_credible_conflict:
+    name: "两个可信来源给出冲突结论"
+    keywords:
+      - conflicting evidence
+      - mixed findings
+      - insufficient evidence
+      - no consensus
+      - disagreement between
+      - evidence remains uncertain
+  PS3_conditional_decision:
+    name: "判断取决于条件、阈值与可观察信号"
+    keywords:
+      - under what conditions
+      - what signals
+      - depends on whether
+      - risk benefit
+      - scenario analysis
+      - threshold for
+      - decision criteria
+  PS4_fragmented_record:
+    name: "证据分散在多个独立系统"
+    keywords:
+      - registry
+      - official record
+      - multiple sources
+      - evidence synthesis
+      - cross-jurisdiction
+      - longitudinal evidence
+  PS5_definition_boundary:
+    name: "定义、纳入与排除条件改变答案集合"
+    keywords:
+      - official definition
+      - eligibility criteria
+      - inclusion criteria
+      - what counts as
+      - classified as
+      - formal designation
+      - scope of the rule
+      - excluded from
+  PS6_moving_target:
+    name: "研究过程中现实仍在变化"
+    keywords:
+      - draft guidance
+      - call for evidence
+      - public consultation
+      - proposed rule
+      - advisory committee
+      - ongoing investigation
+      - closing date
+  PS7_branching_investigation:
+    name: "一个问题分出多个独立调查分支"
+    keywords:
+      - multi-source investigation
+      - several scenarios
+      - competing explanations
+      - multiple jurisdictions
+      - evidence across
+  PS8_auditable_conclusion:
+    name: "结论需要可追溯、可修订、可分叉的研究历史"
+    keywords:
+      - correction
+      - revised conclusion
+      - audit trail
+      - source provenance
+      - postmortem
+      - root cause
+  PS9_source_collapse:
+    name: "很多引用最终坍缩到同一个来源"
+    keywords:
+      - based on a press release
+      - single source
+      - source diversity
+      - widely reported
+      - syndicated
 
-research_tasks:
-  hypothesis_formation:
-    keywords: [hypothesis, mechanism, causal, explanation]
-  experiment_design:
-    keywords: [experimental design, next experiment, assay, protocol, control group, endpoint]
-  evidence_conflict:
-    keywords: [conflicting evidence, conflicting results, discrepancy, inconsistent, disagreement]
-  data_tool_integration:
-    keywords: [pipeline, database, tool, dataset, integration, workflow]
-  ambiguous_result:
-    keywords: [unexpected result, failed experiment, ambiguous, troubleshooting, not working]
-  next_best_action:
-    keywords: [next step, prioritize, which method, what would you do, decision]
-  scope_boundary:
-    keywords: [limitation, boundary, generalize, uncertainty, confidence]
-  expert_calibration:
-    keywords: [expert judgment, calibration, review criteria, decision rule]
+theses:
+  T1_single_pass_ceiling:
+    name: "一次生成装不下一次调查"
+    report_source: "Technical Report §1"
+    allowed_columns: [C1, C2]
+    problem_shapes: [PS4_fragmented_record, PS6_moving_target, PS7_branching_investigation]
+  T2_independent_verification:
+    name: "验证必须由独立角色完成"
+    report_source: "Technical Report §3.1"
+    allowed_columns: [C1, C2]
+    problem_shapes: [PS2_credible_conflict, PS5_definition_boundary, PS8_auditable_conclusion]
+  T3_asynchronous_verification:
+    name: "验证应在研究过程中推进"
+    report_source: "Technical Report §3.2"
+    allowed_columns: [C1, C2, C3]
+    problem_shapes: [PS1_evidence_shift, PS6_moving_target, PS8_auditable_conclusion]
+  T4_evidence_graph:
+    name: "结论应建立在 support 与 contradiction 的证据图上"
+    report_source: "Technical Report §4.1"
+    allowed_columns: [C1, C2]
+    problem_shapes: [PS2_credible_conflict, PS3_conditional_decision, PS4_fragmented_record]
+  T5_source_diversity:
+    name: "很多答案或引用不等于独立证据"
+    report_source: "Technical Report §4.1"
+    allowed_columns: [C1, C2]
+    problem_shapes: [PS2_credible_conflict, PS9_source_collapse]
+  T6_auditable_history:
+    name: "结论应可审计、撤回、修订和分叉"
+    report_source: "Technical Report §3.2"
+    allowed_columns: [C1, C2, C3]
+    problem_shapes: [PS1_evidence_shift, PS6_moving_target, PS8_auditable_conclusion]
+  T7_agent_level_scaling:
+    name: "扩展调查分支，而不只扩展参数"
+    report_source: "Technical Report §3.3"
+    allowed_columns: [C1, C2]
+    problem_shapes: [PS4_fragmented_record, PS7_branching_investigation]
+  T8_search_judgment_loop:
+    name: "新证据改写计划，计划决定下一次搜索"
+    report_source: "Technical Report §6.1"
+    allowed_columns: [C1, C2]
+    problem_shapes: [PS1_evidence_shift, PS3_conditional_decision, PS4_fragmented_record]
+
+signal_roles:
+  timing: "为既定母题提供当下性"
+  real_case: "提供有公开证据的真实案例"
+  stake: "说明错误或遗漏的现实后果"
+  conflict: "提供两个可核证据链之间的冲突"
+  update: "提供会改变原判断的新证据"
+  decision_window: "提供仍开放的决策或反馈窗口"
+  interaction: "只适合原平台互动"
+
+capability_backing:
+  - website
+  - technical_report
+  - demo
+  - owner_confirmed
 
 actions:
   original_post:
@@ -81,29 +186,31 @@ actions:
     platforms: [x]
   reddit_reply:
     platforms: [reddit]
-  watch_only:
+  watch:
     platforms: [x, reddit, rss, web]
 
-audience:
-  name: Apodex4Science
-  keywords: [research lab, scientist, investigator, laboratory, experiment, scientific, biology, chemistry, materials, physics, clinical]
-
+# Deterministic exclusions are intentionally narrow. The Judge handles semantic
+# exclusions such as competitor launches and paper-only material.
 exclude:
-  - name: 学术诚信与出版争议
-    reason: 当前科学内容线不做诚信审判、撤稿追踪、作者争议或出版流程戏剧。
-    keywords: [academic integrity, research misconduct, plagiarism, fabricated citation, fake citation, retraction, peer review drama, reviewer dispute, publication ethics, image manipulation, authorship dispute]
-  - name: 中文内容
-    reason: 主号纯英文；中文另走独立渠道。
-    rule: lang != "en"
-  - name: 体育与博彩结果
-    reason: 不属于科学研究方向。
-    keywords: [world cup, who will win, betting odds, football, soccer, sports bet]
-  - name: 个人生活与活动吆喝
-    reason: 没有科研选题或专业互动价值。
-    keywords: [morning run, happy birthday, good morning, giveaway, we are live, tune in, come join]
-  - name: 竞品自吹与骂战
-    reason: 不硬蹭 launch，不参与衰败叙事或互撕。
-    keywords: [we just shipped, excited to launch, excited to announce, proud to announce, don't be like, despise]
-  - name: 求职择校与会议行政
-    reason: 不是科研决策问题。
-    keywords: [job market, career advice, grad school, graduate school, universities for, hiring managers, conference deadline, reviews are out, rebuttal deadline]
+  - name: "vertical troubleshooting"
+    keywords:
+      - next experiment
+      - which assay
+      - protocol help
+      - pipeline stuck
+      - clustering help
+      - genome annotation help
+      - scrna clustering
+      - rna-seq pipeline
+  - name: "proof series paused"
+    keywords:
+      - leaderboard
+      - state of the art benchmark
+      - benchmark score
+      - pass@1
+  - name: "academic integrity excluded"
+    keywords:
+      - academic misconduct
+      - paper mill
+      - plagiarism allegation
+      - peer review fraud

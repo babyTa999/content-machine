@@ -1,18 +1,30 @@
-# Oracle 外部母库配置（science track）
-# status: auto 才采集；staged 只占位；manual 由 Selene 供料且不进入 repo。
+# Oracle external signal library.
+# External material supplies timing, a real case, stakes, conflict, or an
+# update. It does not define the Apodex thesis.
 
 state:
   cross_day_dedupe_days: 45
   story_dedupe_days: 14
-  dynamic_watch_limit: 20
+  narrative_cooldown_days: 30
+  dynamic_watch_limit: 4
 
 recall:
-  source_priority:
-    x: 6
-    reddit: 4
-    rss: 2
-    web: 1
+  source_role_priority:
+    official_record: 8
+    institutional_update: 7
+    primary_report: 6
+    expert_primary_link: 5
+    reputable_news_lead: 3
+    community_case_lead: 2
+    paper_abstract_only: 1
+    anonymous_opinion: 0
   max_enrichment_candidates: 32
+  enrichment_budgets:
+    official_update: 10
+    x: 8
+    decision_window: 6
+    rss_news: 5
+    community: 3
 
 enrichment:
   x_method: safe-social x tweet
@@ -20,21 +32,33 @@ enrichment:
   web_method: jina reader
   max_chars: 12000
 
-# X 四路并行：静态 watchlist、任务型 Top+Latest、对话图、动态账号池。
+source_role_rules:
+  official_update: official_record
+  official_federalreserve: institutional_update
+  official_challenge: official_record
+  prediction_bank: primary_report
+  google_news_signal: reputable_news_lead
+  rss_nature: paper_abstract_only
+  rss_science: reputable_news_lead
+  hackernews: community_case_lead
+
 x_watchlist:
   method: safe-social x user-posts
   status: auto
+  handles_per_run: 12
   posts_per_handle: 12
   window_h_individual: 72
   window_h_institution: 168
-  request_interval_s: 1.2
+  request_interval_s: 4.0
+  note: "优先机构、监管者、标准组织、可信专家；账号价值与互动资格分开判断。"
 
 x_keyword_search:
   method: safe-social x search
   status: auto
+  query_groups_per_run: 5
   lang: en
   exclude: [retweets]
-  request_interval_s: 2.0
+  request_interval_s: 4.0
   modes:
     Top:
       per_query: 10
@@ -45,83 +69,124 @@ x_keyword_search:
       window_h: 96
       min_engagement: 0
   queries:
-    research_decisions:
-      - '"next experiment" (biology OR chemistry OR materials OR neuroscience)'
-      - '"experimental design" (lab OR scientist OR research)'
-      - '"which method" (assay OR protocol OR experiment OR analysis)'
-    evidence_conflicts:
-      - '"conflicting results" (experiment OR dataset OR assay)'
-      - '"unexpected result" (lab OR experiment OR analysis)'
-      - '"data discrepancy" (research OR experiment OR analysis)'
-    workflow_friction:
-      - '"research workflow" (tool OR database OR pipeline)'
-      - '"analysis pipeline" (stuck OR error OR unexpected)'
-      - '"failed experiment" (help OR why OR troubleshooting)'
-    science_signals:
-      - '"AI for science" (experiment OR lab OR discovery)'
-      - '"scientific reasoning" (evaluation OR evidence OR experiment)'
-      - '"new dataset" (biology OR chemistry OR materials OR physics)'
+    evidence_shift:
+      - '("updated guidance" OR "label change" OR "updated assessment") (health OR policy OR technology OR economy)'
+      - '("new safety information" OR "revised estimate" OR "warning removed" OR "warning added")'
+    credible_conflict:
+      - '("conflicting evidence" OR "mixed findings" OR "no consensus") (health OR policy OR science OR technology)'
+      - '("disagreement between" OR "evidence remains uncertain") (agency OR guideline OR regulator OR experts)'
+    conditional_decision:
+      - '("under what conditions" OR "what signals would" OR "depends on whether") (decision OR forecast OR evidence)'
+      - '("risk benefit" OR "scenario analysis" OR "decision criteria")'
+    moving_decision:
+      - '("call for evidence" OR "public consultation" OR "draft guidance" OR "proposed rule")'
+      - '("advisory committee" OR "feedback period") (open OR deadline OR closing)'
+    definition_boundary:
+      - '("official definition" OR "eligibility criteria" OR "what counts as") (rule OR program OR policy OR evidence)'
+      - '("inclusion criteria" OR "formal designation" OR "scope of the rule")'
 
 x_conversation_graph:
   method: safe-social x search --to
   status: auto
   mode: Latest
-  handles_per_run: 8
+  handles_per_run: 4
   per_handle: 12
   window_h: 72
   min_engagement: 1
-  request_interval_s: 2.0
-  note: 每天轮换 watchlist seed，读取回复者与 quote chain；只扩大召回，不自动互动。
+  request_interval_s: 4.0
+  note: "只扩召回。是否原创、是否互动、互动价值分别判断。"
 
 x_dynamic_watch:
   method: safe-social x user-posts
   status: auto
   posts_per_handle: 10
   window_h: 168
-  request_interval_s: 1.2
-  note: 账号来自 repo 外 SQLite；只有多日稳定命中并经 Evidence Judge 留下的账号才晋级。
+  request_interval_s: 4.0
+  note: "只晋级多日稳定贡献官网同构问题或一手信号的账号。"
 
-# Reddit 同时取高质量常青讨论和近期讨论；既可做回复，也可做原创选题 seed。
+# Reddit 只提供 pain language 与 case lead。匿名内容不能直接成为官号案例。
 reddit_discovery:
   method: safe-social reddit search
   status: auto
   request_interval_s: 1.5
   modes:
-    - {sort: top, time: year, limit: 12}
-    - {sort: new, time: month, limit: 12}
+    - {sort: top, time: year, limit: 8}
+    - {sort: new, time: month, limit: 10}
   query_rotation_per_sub: 1
   queries:
-    - '(help OR "how do" OR "which method" OR "what would you do" OR "next experiment")'
-    - '(protocol OR assay OR pipeline OR analysis OR dataset) (issue OR discrepancy OR unexpected OR stuck)'
-    - '(experiment OR simulation OR measurement) (failed OR confusing OR conflicting OR troubleshooting)'
+    - '("conflicting advice" OR "information changed" OR "cannot find a clear answer")'
+    - '("official source" OR "what counts as" OR "under what conditions")'
+    - '("real-world consequence" OR "decision changed" OR "new evidence")'
   communities:
-    life_sciences: [bioinformatics, computationalbiology, labrats, neuroscience, genetics, biotech]
-    chemistry_materials: [chemistry, MaterialsScience]
-    scientific_computing: [statistics, datascience, MachineLearning]
+    decisions_and_policy: [AskEconomics, publichealth, medicine, Law]
+    research_practice: [AskAcademia, science, askscience]
+    technology_practice: [technology, ExperiencedDevs]
+  evidence_role: community_case_lead
+  lead_only: true
 
-# RSS/News 只是及时线索；“新发布”本身没有选题价值。
+# Papers/news are leads only. They cannot independently create Product-aware.
 science_rss:
+  method: rss
+  status: auto
+  limit_per_feed: 12
+  lead_only: true
+  feeds:
+    Nature:
+      url: https://www.nature.com/nature.rss
+      evidence_role: paper_abstract_only
+    Science:
+      url: https://www.science.org/rss/news_current.xml
+      evidence_role: reputable_news_lead
+
+signal_news:
+  method: google_news_rss
+  status: auto
+  per_query: 5
+  queries:
+    - '"updated guidance" OR "label change" official'
+    - '"conflicting evidence" regulator OR guideline'
+    - '"call for evidence" OR "public consultation" science OR technology OR health'
+    - '"revised estimate" OR "updated assessment" policy OR economy OR medicine'
+
+# Stable first-party sources. Index pages are parsed into individual update links.
+official_indexes:
+  method: jina_index
+  status: auto
+  limit_per_page: 20
+  pages:
+    FDA_Drug_Safety:
+      url: https://www.fda.gov/drugs/drug-safety-and-availability/drug-safety-communications
+      allow_hosts: [fda.gov]
+      include_paths: [/drugs/drug-safety-and-availability/]
+      evidence_role: official_record
+      signal_group: evidence_shift
+    FDA_Drug_Alerts:
+      url: https://www.fda.gov/drugs/drug-safety-and-availability/drug-alerts-and-statements
+      allow_hosts: [fda.gov]
+      include_paths: [/drugs/drug-safety-and-availability/]
+      evidence_role: official_record
+      signal_group: evidence_shift
+    EU_Have_Your_Say:
+      url: https://ec.europa.eu/info/law/better-regulation/have-your-say/initiatives_en
+      allow_hosts: [ec.europa.eu]
+      include_paths: [/info/law/better-regulation/have-your-say/initiatives/]
+      evidence_role: official_record
+      signal_group: decision_window
+
+official_feeds:
   method: rss
   status: auto
   limit_per_feed: 18
   feeds:
-    Nature: https://www.nature.com/nature.rss
-    Science: https://www.science.org/rss/news_current.xml
-
-science_news:
-  method: google_news_rss
-  status: auto
-  per_query: 6
-  queries:
-    - scientific research experimental design data challenge
-    - research lab workflow dataset tool problem
-    - biology chemistry materials experiment unexpected result
-    - scientific AI laboratory decision evidence
+    FederalReserve:
+      url: https://www.federalreserve.gov/feeds/press_all.xml
+      evidence_role: institutional_update
+      signal_group: conditional_decision
 
 prediction_banks:
   method: jina
   status: auto
-  url: 'https://www.metaculus.com/questions/?order_by=-activity&status=open&search=science+drug+protein+climate+biology+materials'
+  url: "https://www.metaculus.com/questions/?order_by=-activity&status=open&search=health+policy+economy+climate+technology"
 
 official_challenges:
   method: jina
@@ -133,14 +198,11 @@ official_challenges:
 
 hackernews:
   method: api
-  status: auto
-  query: scientific research tools
-  hits: 8
-
-official_records:
   status: staged
-  note: 官方数据库留待下一次专项讨论后再配置；当前 Judge 不得把新闻线索伪装成正式记录。
+  query: research decision evidence
+  hits: 6
+  note: "watch-only；不直接形成原创。"
 
 owned_materials:
   status: manual
-  note: 所有内部物料由 Selene 提供；不保存内部路径、原文、截图、数字或产品承诺。
+  note: "技术报告、官网、demo 与 owner-confirmed 事实只由 Selene 供料；外部来源不得改写产品能力。"
