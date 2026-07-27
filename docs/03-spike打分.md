@@ -48,3 +48,29 @@ enrichment 回到原始 tweet、原帖、官方文件、公开记录或权威页
 - capability backing 和 evidence gap
 
 同一来源整份日报只出现一次。原创与互动冲突时必须二选一；其他用途只允许短 `secondary_note`，不得复制到第二个栏目。
+
+## 7. 可动笔闸门：operator / form / axis
+
+上面六项让候选**合法**，但不让它**可动笔**——四个母题字段全部回答"Apodex 凭什么
+能讲"，没有一个回答"落笔第一句是什么"。候选过审后仍是一组坐标，选题到 draft 之间
+因此断掉。三个字段补这个断口，`decision=keep` + `original_post` 时缺一即校验失败：
+
+| 字段 | 配置 | 回答的问题 |
+|---|---|---|
+| `operator_id` | [`config/operators.yml`](../config/operators.yml) | 这条怎么写 |
+| `form` | [`config/forms.yml`](../config/forms.yml) | 写成什么形态 |
+| `axis` | [`config/axes.yml`](../config/axes.yml) | 从母问题的哪个切面问 |
+
+纪律三条：
+
+1. **算子与形态解耦**。任何算子都能出任何形态；`forms.yml` 刻意不含 operator 字段。
+   `long_post` 每期上限 1、每周上限 2（近 7 天由 `report_forms` 状态表计数），
+   防止 draft 退化成同一个骨架反复填空。
+2. **`dropped` / `paused` / `needs_rework` 的算子选了报错**，弃选口径写在算子定义里。
+   `problem_shape` 声明了 `operator_fit` 时只能从那张表里选。
+3. **代号不许进散文**。`source_says` / `why_now` / `why_apodex` / `possible_angle` /
+   `inference_boundary` / `secondary_note` 六个字段出现 `E1` `OP8` `PS10` `EI6` `AX3`
+   `T9` `RQ_*` `CF_*` 一律报错。日报也只打印算子/形态/轴的中文名，不打印代号。
+
+日报末尾输出「轮换自查」：轴分布 + 形态用量（本期 / 近 7 天）。全部原创落在同一根
+轴上时打印告警但不阻断——轮换是编辑判断，不是机械规则。

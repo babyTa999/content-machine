@@ -1,0 +1,108 @@
+schema_version: 1
+
+# 分类轴。母问题只有一句，轴决定这一句今天从哪个切面问。
+#
+# 母问题（pillars.yml → root_question.RQ_who_checked）的大白话版：
+#   我已经得到了一个结果，但我不知道还有哪个解释没有排除。
+#
+# 学科（AX1）只是其中一根轴，且不是最好的一根：PI 不按学科想问题，按"我现在卡在
+# 哪"想问题。轴存在的作用是让排期能看出偏斜——一周全落在同一根轴上就该轮换。
+#
+# AX3 与 AX4 是乘数轴：它们能与 AX1、AX2 交叉，因此素材量是乘法而非加法。
+
+axes:
+
+  AX1_discipline:
+    name: "学科"
+    kind: multiplier
+    values: [life_science, materials, energy, chemistry, physics, computing]
+    note: "决定给谁看。来源：战略文件 A1 全部 STEM 学科范围。"
+
+  AX2_workflow_moment:
+    name: "研究工作流时刻"
+    kind: multiplier
+    values:
+      - before_design        # 设计实验前：我要排除什么
+      - during_run           # 跑实验中：现实变了怎么办
+      - after_result         # 结果出来后：是我以为的那个原因吗
+      - during_analysis      # 分析时：这个统计回答的是我的问题吗
+      - before_submission    # 投稿前：审稿人会问什么
+      - answering_reviewers  # 回审稿意见时：怎么证明排除了
+      - choosing_next        # 定下一步实验：哪个分支值得做
+      - reading_papers       # 读别人论文：该不该建立在它上面
+      - writing_grant        # 写基金：怎么让评审相信预见了替代解释
+      - replicating_others   # 复现别人：为什么我做不出来
+    note: "决定什么时候疼。Selene 2026-07-27 提出，比 AX1 更 PI-native。"
+
+  AX3_alternative_explanation_type:
+    name: "替代解释类型学"
+    kind: multiplier
+    values:
+      - apparatus_itself         # 器械或操作本身（sham 类）
+      - measurement_artifact     # 测量伪影
+      - normalization_basis      # 归一化基准
+      - selection_effect         # 选择效应：谁进样本、谁被删失
+      - analytic_freedom         # 分析路径自由度
+      - unequal_baseline         # 基线不对等：对照方未被同等优化
+      - surplus_resource         # 富余资源掩盖真实约束
+      - information_leakage      # 信息泄漏
+      - batch_and_background     # 批次、品系、衬底、实验室
+      - order_and_time           # 顺序与时间效应
+      - boundary_extrapolation   # 窄条件下测得，宽条件下宣称
+      - definition_drift         # 定义、纳入排除、终点漂移
+    note: "学科无关的抽象层，与 AX1 交叉即 12 × 6 = 72 格。"
+
+  AX4_who_checks:
+    name: "谁在检查"
+    kind: multiplier
+    values:
+      - yourself
+      - collaborator
+      - anonymous_reviewer
+      - journal_editor
+      - replicator
+      - regulator
+      - downstream_citer
+      - someone_who_distrusts_you
+    note: "母问题的直接展开，每个『谁』有专属失效模式。"
+
+  AX5_evidence_lifecycle:
+    name: "证据生命周期状态"
+    kind: simple
+    values:
+      - no_answer_yet
+      - preprint
+      - published
+      - entered_guidance
+      - overturned
+      - forgotten_but_still_cited
+
+  AX6_who_pays_for_error:
+    name: "错了谁付钱"
+    kind: simple
+    values: [yourself, your_students, downstream_labs, patients, investors, the_public]
+    note: "情绪最强的一轴。对应 operators.yml OP5_incentive_misalignment_audit。"
+
+  AX7_uncheckable_by_construction:
+    name: "根本查不了的"
+    kind: simple
+    values:
+      - one_off_observation
+      - destructive_measurement
+      - private_data
+      - compute_out_of_reach
+      - ethically_forbidden_control
+    note: |
+      最诚实的一轴：有些对照做不了。做不了不是问题，不声明才是。
+      对应 operators.yml OP11_boundary_self_disclosure 的学术版。
+
+  AX8_cross_field_isomorphism:
+    name: "跨学科同构"
+    kind: simple
+    values: [pairwise_disciplines]
+    note: "对应 EI7 / PS11 / T9。组合量最大。"
+
+# 轮换纪律：日报会打印轴覆盖表。同一份报告内所有原创落在同一根轴上时打印告警，
+# 不阻断——轮换是编辑判断，不是机械规则。
+rotation:
+  warn_when_single_axis: true

@@ -1,0 +1,55 @@
+schema_version: 1
+
+# 形态层。**与算子完全解耦**：任何算子都可以出任何形态。
+#
+# 存在理由：算子的 close 字段是"一句可能的开头"，不是模板。把选题来源和内容形态
+# 绑在一起，draft 就会退化成同一个骨架反复填空。逆向的那 80 条帖里 ≥700 字符的
+# 长帖只有 11 条，其余 69 条是短断言、图表帖与接话——长短混排才是常态。
+#
+# 因此本文件刻意不含任何 operator_id 或 problem_shape_id 字段。
+# 任何试图建立 operator → form 固定映射的改动都违反本层设计意图。
+
+decoupled_from:
+  - operators.yml
+  - pillars.yml problem_shapes
+
+forms:
+
+  short_assertion:
+    name: "短断言"
+    status: active
+    length_hint: "1–3 句，一个判断，不展开论证"
+    max_per_report: 3
+    max_per_week: 12
+
+  mid_post:
+    name: "中帖"
+    status: active
+    length_hint: "1–3 段，含一个具体可核的数字或机制"
+    max_per_report: 2
+    max_per_week: 8
+
+  list_post:
+    name: "列表帖"
+    status: active
+    length_hint: "一个引子 + 3–6 个并列项"
+    max_per_report: 1
+    max_per_week: 3
+
+  chart_post:
+    name: "图表帖"
+    status: active
+    length_hint: "一句判断 + 一张图承载全部信息"
+    max_per_report: 1
+    max_per_week: 3
+
+  long_post:
+    name: "长帖"
+    status: active
+    length_hint: "多段，完整论证链"
+    max_per_report: 1
+    max_per_week: 2
+    quota_reason: |
+      配额最紧的一档。长帖实测不掉量也不涨量（逆向样本中长帖中位 2493 views
+      对短帖 2491），且 bookmark 普遍 0–3。它买的是可信度不是流量，因此按
+      稀缺资源配给，不作为默认形态。

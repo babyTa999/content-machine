@@ -126,6 +126,14 @@ def state_connection() -> sqlite3.Connection:
             created_at TEXT NOT NULL,
             PRIMARY KEY(stage, run_id, candidate_id)
         );
+        CREATE TABLE IF NOT EXISTS report_forms (
+            report_date TEXT NOT NULL,
+            candidate_id TEXT NOT NULL,
+            form TEXT NOT NULL,
+            axis TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY(report_date, candidate_id)
+        );
+        CREATE INDEX IF NOT EXISTS report_forms_date_idx ON report_forms(report_date);
         """
     )
     return connection
@@ -559,6 +567,141 @@ def validate_theme_match(
     return problem_shape_id, thesis_id
 
 
+WRITABLE_OPERATOR_STATES = {"active", "always_on"}
+
+# 内部代号绝不允许出现在给人读的散文字段里。它们是管线的坐标，不是文案。
+# 一旦泄进 draft，写作就会退化成按代号填空。
+INTERNAL_CODENAME_RE = re.compile(
+    r"\b(?:"
+    r"(?:PS|EI|OP|AX|CF|RQ|T)\d*_[A-Za-z_]+"   # PS10_missing_control / T9_cross_domain_synthesis
+    r"|(?:PS|EI|OP|AX)\d+"                      # 裸 PS10 / EI6 / OP8 / AX3
+    r"|E[12]"                                   # 引擎代号 E1 / E2
+    r")\b"
+)
+
+# 这些散文字段最终会被人抄进文案，必须干净。
+PROSE_FIELDS = (
+    "source_says", "why_now", "why_apodex", "possible_angle",
+    "inference_boundary", "secondary_note",
+)
+
+
+def assert_no_internal_codenames(row: dict[str, Any], candidate_id: str) -> None:
+    for field in PROSE_FIELDS:
+        value = row.get(field)
+        if isinstance(value, list):
+            value = " ".join(str(item) for item in value)
+        found = INTERNAL_CODENAME_RE.findall(str(value or ""))
+        if found:
+            raise SystemExit(
+                f"Internal codename leaked into prose field '{field}' for {candidate_id}: "
+                f"{sorted(set(found))}. Codenames are pipeline coordinates, not copy — "
+                f"restate the idea in plain language."
+            )
+
+
+def validate_operator(
+    row: dict[str, Any], candidate_id: str, problem_shape_id: str, pillars: dict[str, Any]
+) -> str:
+    configured = load_yaml(REPO / "config" / "operators.yml")
+    operator_id = str(row.get("operator_id") or "")
+    operator = (configured.get("operators") or {}).get(operator_id)
+    if not operator:
+        raise SystemExit(
+            f"Invalid/missing operator_id for {candidate_id}: {operator_id!r}. "
+            f"A candidate without an operator is admissible but not writable."
+        )
+    status = str(operator.get("status") or "")
+    if status not in WRITABLE_OPERATOR_STATES:
+        raise SystemExit(
+            f"Operator {operator_id} is not writable (status={status}): {candidate_id}"
+        )
+    shape = (pillars.get("problem_shapes") or {}).get(problem_shape_id) or {}
+    permitted = shape.get("operator_fit")
+    if permitted and operator_id not in permitted:
+        raise SystemExit(
+            f"Operator {operator_id} is not fit for {problem_shape_id}: {candidate_id}"
+        )
+    return operator_id
+
+
+def validate_form(row: dict[str, Any], candidate_id: str) -> str:
+    configured = load_yaml(REPO / "config" / "forms.yml")
+    form_id = str(row.get("form") or "")
+    form = (configured.get("forms") or {}).get(form_id)
+    if not form or str(form.get("status")) != "active":
+        raise SystemExit(f"Invalid/missing form for {candidate_id}: {form_id!r}")
+    return form_id
+
+
+def validate_axis(row: dict[str, Any], candidate_id: str) -> str:
+    configured = load_yaml(REPO / "config" / "axes.yml")
+    axis_id = str(row.get("axis") or "")
+    if axis_id not in (configured.get("axes") or {}):
+        raise SystemExit(f"Invalid/missing axis for {candidate_id}: {axis_id!r}")
+    return axis_id
+
+
+def enforce_form_quota(rows: list[dict[str, Any]], day: str) -> dict[str, dict[str, int]]:
+    """Per-report caps are hard. Weekly caps count the trailing 7 days of state."""
+    configured = load_yaml(REPO / "config" / "forms.yml")
+    forms = configured.get("forms") or {}
+    per_report: dict[str, int] = {}
+    for row in rows:
+        form_id = str(row.get("form") or "")
+        if form_id:
+            per_report[form_id] = per_report.get(form_id, 0) + 1
+    connection = state_connection()
+    try:
+        since = _days_ago(day, 7)
+        prior = {
+            str(record["form"]): int(record["total"])
+            for record in connection.execute(
+                "SELECT form, COUNT(*) AS total FROM report_forms "
+                "WHERE report_date >= ? AND report_date < ? GROUP BY form",
+                (since, day),
+            )
+        }
+    finally:
+        connection.close()
+    usage: dict[str, dict[str, int]] = {}
+    for form_id, count in sorted(per_report.items()):
+        definition = forms.get(form_id) or {}
+        report_cap = definition.get("max_per_report")
+        week_cap = definition.get("max_per_week")
+        week_total = prior.get(form_id, 0) + count
+        if report_cap is not None and count > int(report_cap):
+            raise SystemExit(
+                f"Form quota exceeded for {form_id}: {count} in one report, cap {report_cap}. "
+                f"Form is decoupled from operator on purpose — vary the form, not the topic."
+            )
+        if week_cap is not None and week_total > int(week_cap):
+            raise SystemExit(
+                f"Weekly form quota exceeded for {form_id}: {week_total} in the trailing "
+                f"7 days, cap {week_cap}."
+            )
+        usage[form_id] = {"report": count, "week": week_total}
+    return usage
+
+
+def record_report_forms(day: str, rows: list[dict[str, Any]]) -> None:
+    connection = state_connection()
+    try:
+        connection.execute("DELETE FROM report_forms WHERE report_date = ?", (day,))
+        connection.executemany(
+            "INSERT OR REPLACE INTO report_forms(report_date, candidate_id, form, axis) "
+            "VALUES(?, ?, ?, ?)",
+            [
+                (day, str(row["candidate_id"]), str(row.get("form") or ""), str(row.get("axis") or ""))
+                for row in rows
+                if row.get("form")
+            ],
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def validate_editorial_intent(
     row: dict[str, Any],
     candidate_id: str,
@@ -800,6 +943,12 @@ def normalize_evidence_decision(
                 f"C3 requires signal_role=decision_window: {candidate['candidate_id']}"
             )
         cleaned["signal_role"] = signal_role
+        cleaned["operator_id"] = validate_operator(
+            row, candidate["candidate_id"], problem_shape_id, pillars
+        )
+        cleaned["form"] = validate_form(row, candidate["candidate_id"])
+        cleaned["axis"] = validate_axis(row, candidate["candidate_id"])
+        assert_no_internal_codenames(row, candidate["candidate_id"])
     elif cleaned["decision"] == "interaction":
         cleaned["primary_destination"] = "C8"
         cleaned["primary_action"] = allowed_primary_action(candidate, primary_action)
@@ -834,6 +983,58 @@ def _source(candidate: dict[str, Any]) -> str:
     return f"[{_cell(prefix + str(label), 120)}]({candidate.get('url')})"
 
 
+def _named(path: str, section: str, key: Any) -> str:
+    """Render the human name, never the codename — the report should not train on IDs."""
+    if not key:
+        return "—"
+    definition = (load_yaml(REPO / "config" / path).get(section) or {}).get(str(key)) or {}
+    return _cell(definition.get("name") or key, 40)
+
+
+def _operator_label(row: dict[str, Any]) -> str:
+    return _named("operators.yml", "operators", row.get("operator_id"))
+
+
+def _form_label(row: dict[str, Any]) -> str:
+    return _named("forms.yml", "forms", row.get("form"))
+
+
+def _axis_label(row: dict[str, Any]) -> str:
+    return _named("axes.yml", "axes", row.get("axis"))
+
+
+def _rotation_section(
+    original_rows: list[dict[str, Any]], form_usage: dict[str, dict[str, int]]
+) -> list[str]:
+    if not original_rows:
+        return []
+    axes_cfg = load_yaml(REPO / "config" / "axes.yml")
+    axis_counts: dict[str, int] = {}
+    for row in original_rows:
+        axis_id = str(row.get("axis") or "")
+        if axis_id:
+            axis_counts[axis_id] = axis_counts.get(axis_id, 0) + 1
+    lines = ["## 轮换自查", "", "| 轴 | 本期条数 |", "|---|---:|"]
+    for axis_id, count in sorted(axis_counts.items(), key=lambda item: (-item[1], item[0])):
+        lines.append(f"| {_named('axes.yml', 'axes', axis_id)} | {count} |")
+    lines.append("")
+    if len(axis_counts) == 1 and (axes_cfg.get("rotation") or {}).get("warn_when_single_axis"):
+        only = next(iter(axis_counts))
+        lines.extend([
+            f"> 告警：本期全部原创落在同一根轴（{_named('axes.yml', 'axes', only)}）。"
+            f"母问题只有一句，轴决定今天从哪个切面问——换一根。",
+            "",
+        ])
+    if form_usage:
+        lines.extend(["| 形态 | 本期 | 近 7 天 |", "|---|---:|---:|"])
+        for form_id, counts in sorted(form_usage.items()):
+            lines.append(
+                f"| {_named('forms.yml', 'forms', form_id)} | {counts['report']} | {counts['week']} |"
+            )
+        lines.append("")
+    return lines
+
+
 def render_report(
     source: dict[str, Any], candidates: dict[str, dict[str, Any]], rows: list[dict[str, Any]]
 ) -> str:
@@ -862,6 +1063,7 @@ def render_report(
         row for row in rows
         if row["decision"] == "keep" and row["primary_action"] == "original_post"
     ]
+    form_usage = enforce_form_quota(original_rows, day)
     for column_id, definition in columns.items():
         grouped = [row for row in original_rows if row["primary_destination"] == column_id]
         if not grouped:
@@ -869,8 +1071,8 @@ def render_report(
         lines.extend(
             [
                 f"## {definition['name']}", "",
-                "| 来源 | 来源明确说了什么 | 为什么现在值得看 | 为什么适合 Apodex | 可写角度 | 推断边界 | 发布前需核验 | 状态 |",
-                "|---|---|---|---|---|---|---|---|",
+                "| 来源 | 来源明确说了什么 | 为什么现在值得看 | 为什么适合 Apodex | 可写角度 | 算子 | 形态 | 轴 | 推断边界 | 发布前需核验 | 状态 |",
+                "|---|---|---|---|---|---|---|---|---|---|---|",
             ]
         )
         for row in grouped:
@@ -880,11 +1082,13 @@ def render_report(
                     [
                         _source(candidate), _cell(row["source_says"]), _cell(row["why_now"]),
                         _cell(row["why_apodex"]), _cell(row["possible_angle"]),
+                        _operator_label(row), _form_label(row), _axis_label(row),
                         _cell(row["inference_boundary"]), _cell(row["needs_verification"]), "Idea",
                     ]
                 ) + " |"
             )
         lines.append("")
+    lines.extend(_rotation_section(original_rows, form_usage))
     for platform, title, valid_actions in (
         ("x", "X 互动池", {"x_reply", "x_quote"}),
         ("reddit", "Reddit 互动池", {"reddit_reply"}),
@@ -956,7 +1160,16 @@ def render(args: argparse.Namespace) -> None:
         "decisions": normalized,
     }
     Path(args.clean_out).write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
-    Path(args.out).write_text(render_report(source, candidates, normalized), encoding="utf-8")
+    report = render_report(source, candidates, normalized)
+    Path(args.out).write_text(report, encoding="utf-8")
+    day = str(source.get("enriched_at") or dt.date.today().isoformat())[:10]
+    record_report_forms(
+        day,
+        [
+            row for row in normalized
+            if row["decision"] == "keep" and row["primary_action"] == "original_post"
+        ],
+    )
     connection = state_connection()
     try:
         record_outcomes(connection, "evidence", run_id, candidates, decisions)

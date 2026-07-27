@@ -41,6 +41,8 @@ scope:
 
 operators_ref: config/operators.yml
 confound_library_ref: config/confound_library.yml
+forms_ref: config/forms.yml
+axes_ref: config/axes.yml
 
 columns:
   C1:
@@ -183,6 +185,14 @@ problem_shapes:
         - confound
         - control_or_report_item
         - standard_source
+    operator_fit:
+      - OP1_constant_falsified
+      - OP2_term_inflation_audit
+      - OP4_measurement_collapse
+      - OP5_incentive_misalignment_audit
+      - OP8_primary_document_raid
+      - OP9_source_collapse_parable
+      - OP11_boundary_self_disclosure
   PS11_cross_field_isomorphism:
     name: "两个学科的难题在计算范式上是同一个问题"
     intake: curated
@@ -193,6 +203,11 @@ problem_shapes:
       - expensive validation
       - transferable method
       - same computational shape
+    operator_fit:
+      - OP1_constant_falsified
+      - OP2_term_inflation_audit
+      - OP9_source_collapse_parable
+      - OP11_boundary_self_disclosure
 
 theses:
   T1_single_pass_ceiling:

@@ -153,6 +153,9 @@ decision 只能是：
       "capability_backing": "technical_report",
       "primary_destination": "C1",
       "primary_action": "original_post",
+      "operator_id": "OP1_constant_falsified",
+      "form": "mid_post",
+      "axis": "AX2_workflow_moment",
       "source_says": "原来源明确说了什么",
       "why_now": "时效来自哪次更新、事件或仍开放窗口",
       "why_apodex": "外部问题形态与既定 design choice 的具体连接",
@@ -172,3 +175,29 @@ decision 只能是：
 - C3 必须使用 `signal_role=decision_window`，并确认截止时间仍有效。
 - enrichment 失败时不得补写事实；证据不足则 watch 或 reject。
 - `Draft` 禁止使用；完成一手核验和 writing brief 前统一为 `Idea`。
+
+### `operator_id` / `form` / `axis` 三个必填字段
+
+`decision=keep` 且 `primary_action=original_post` 时三者缺一即校验失败。
+
+**`operator_id`** —— 读 `config/operators.yml`。前四个字段回答"Apodex 凭什么能讲"，
+这个字段回答"这条怎么写"。只能选 `status: active` 或 `always_on`；
+`dropped` / `paused` / `needs_rework` 的算子选了就报错。若该 `problem_shape` 声明了
+`operator_fit`，必须从那张表里选。
+
+**`form`** —— 读 `config/forms.yml`。**与算子完全解耦**：任何算子都可以出任何形态。
+不要因为某个算子的 `close` 字段写得长就默认选 `long_post`——那个字段是"一句可能的
+开头"，不是模板。`long_post` 每期上限 1、每周上限 2，是最紧的一档。默认倾向
+`short_assertion` 与 `mid_post`。
+
+**`axis`** —— 读 `config/axes.yml`。母问题只有一句，轴决定今天从哪个切面问。
+同一期原创全部落在同一根轴上会触发告警——主动分散。
+
+### 代号不许进散文
+
+`source_says` / `why_now` / `why_apodex` / `possible_angle` / `inference_boundary` /
+`secondary_note` 六个字段会被人直接抄进文案，因此**禁止出现任何内部代号**：
+`E1` `E2` `OP8` `PS10` `EI6` `AX3` `T9` `RQ_who_checked` `CF_...` 一律报错。
+
+用大白话写同一件事。例：不要写"走 E1 引擎，对应 PS10_missing_control"，
+要写"你测到的结果可能来自操作本身，而不是被干预的对象"。
