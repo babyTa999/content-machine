@@ -12,7 +12,7 @@
 - 适合的外部信号角色
 - 硬排除和暂停叙事
 
-没有 `problem_shape_id` 或 `product_thesis_id` 的候选不能进入 product-led 原创。
+没有 `problem_shape_id` 与 `thesis_id` 的候选不能进入 product-led 原创。
 
 ## 2. collect：证据角色 schema
 

@@ -2,7 +2,7 @@
 name: 角度生成器（X 版·Apodex）
 role: 创作前——把一个研究难题、公开信号或事件拆成结构不同的 X 选题角度
 source: 改造自 newsjack angle-generator（把"记者 beat/媒体"换成"ICP/栏目/深信号"）
-when_to_use: 选中一个 spike 后、动笔前；一个事实能发哪几条结构不同的 X 内容；给 C1/C2/C3/C5 找切口。
+when_to_use: 日报选中一条候选后、动笔前；一个事实能发哪几条结构不同的 X 内容；给 C1/C2/C3 找切口。
 ---
 
 # 角度生成器（X 版）
@@ -13,10 +13,15 @@ when_to_use: 选中一个 spike 后、动笔前；一个事实能发哪几条结
 
 ## 硬前提（Apodex 主线 gate）
 
-- 每个角度必须 **ladder 回主线**：研究实验室与科研团队的 evidence、decision、verification。挂不进 → 毙。
-- 领域(bio/材料/金融)只做 instance，不做身份。
-- 打两个标签：**ICP**（Apodex4Science）+ **栏目**（C1 / C2 / C3 / C5）。
+- 每个角度必须 **收口回母问题**：`Who checked this — other than the person who made it?`
+  大白话：我已经得到了一个结果，但我不知道还有哪个解释没有排除。挂不进 → 毙。
+  母问题定义在 `config/pillars.yml` 的 `root_question`。
+- 收口落在**这个判断有没有资格被相信**，不是"对不对"。
+- 领域（bio / 材料 / 能源 / 化学 / 物理 / 计算）只做 instance，不做身份。
+- 打一个标签：**栏目**（C1 / C2 / C3）。C5 暂停，不要给它找角度。
 - **PROBLEM-FIRST**：角度得亮出研究任务、决策或证据边界，不做纯方法展示、不自夸。
+- 角度不预设形态。长短由 `config/forms.yml` 的配额决定，不由角度决定——
+  一个角度可以是短断言也可以是长帖。
 
 ## Lenses —— 发散引擎（一个事实过每个 lens，多数不适用，很正常）
 
@@ -32,8 +37,8 @@ when_to_use: 选中一个 spike 后、动笔前；一个事实能发哪几条结
 
 ## 一个"角度"要装齐
 - **Hook 草线**：一句可当 thread 首推/单 post 开头的话（真人会写的，不是营销稿）。
-- **栏目**：C1 / C2 / C3 / C5 之一。
-- **ICP**：Apodex4Science。
+- **栏目**：C1 / C2 / C3 之一。
+- **收口句**：这条最后落回"这个判断有没有资格被相信"的哪一种说法。
 - **目标深信号**：收藏 / 评论 / 曝光（决定怎么收尾留钩）。
 - **独立成立?**：这条能脱离上下文单独站住吗（candidate isolation）。
 - **时效/decay**：`48h内热点` / `一周` / `evergreen`（对齐 AgeFilter；越早越好）。

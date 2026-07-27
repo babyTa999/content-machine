@@ -64,7 +64,7 @@ when_to_use: 一条 X 成稿(thread/post/quote)要发之前；"帮我打分/这�
 - 0：纯陈述无钩。1：只可能拿赞。2：有可争的断言 / 可判的陷阱 / 可收藏的参考 / 可截图的金句。
 
 **4. 身份 · 栏目 · ICP** — ladder 回研究实验室与科研团队的 evidence、decision、verification 主线吗？
-- 0：挂不进主线 / 领域漂移。1：勉强沾边。2：清晰属于当前栏目 + 对 Apodex4Science 有具体价值。
+- 0：挂不进主线 / 领域漂移。1：勉强沾边。2：清晰属于当前栏目 + 对学术 PI 与深科技研究者有具体价值。
 
 **5. verification 内核落地** — 落到 verify>generate / discovery，还是写成了普通 AI tool？
 - 0：普通 tool 腔 / 只吹"benchmark win" / 当又一个 chatbot。2：verification / discovery 叙事站得住。
