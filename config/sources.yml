@@ -87,14 +87,14 @@ x_keyword_search:
 
 x_conversation_graph:
   method: safe-social x search --to
-  status: auto
+  status: disabled
   mode: Latest
   handles_per_run: 4
   per_handle: 12
   window_h: 72
   min_engagement: 1
   request_interval_s: 4.0
-  note: "只扩召回。是否原创、是否互动、互动价值分别判断。"
+  note: "已关闭：实测主要召回模型发布争吵、随口回复与 benchmark 评论。"
 
 x_dynamic_watch:
   method: safe-social x user-posts
@@ -107,7 +107,7 @@ x_dynamic_watch:
 # Reddit 只提供 pain language 与 case lead。匿名内容不能直接成为官号案例。
 reddit_discovery:
   method: safe-social reddit search
-  status: auto
+  status: disabled
   request_interval_s: 1.5
   modes:
     - {sort: top, time: year, limit: 8}
@@ -123,6 +123,7 @@ reddit_discovery:
     technology_practice: [technology, ExperiencedDevs]
   evidence_role: community_case_lead
   lead_only: true
+  note: "已停用：top/year 结果过旧，当前不进入每日日报采集。"
 
 # Papers/news are leads only. They cannot independently create Product-aware.
 science_rss:
@@ -140,13 +141,14 @@ science_rss:
 
 signal_news:
   method: google_news_rss
-  status: auto
+  status: disabled
   per_query: 5
   queries:
     - '"updated guidance" OR "label change" official'
     - '"conflicting evidence" regulator OR guideline'
     - '"call for evidence" OR "public consultation" science OR technology OR health'
     - '"revised estimate" OR "updated assessment" policy OR economy OR medicine'
+  note: "已停用：实测 20 条中 17 条超过 7 天，中位年龄约 155 天。"
 
 # Stable first-party sources. Index pages are parsed into individual update links.
 official_indexes:

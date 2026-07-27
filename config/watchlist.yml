@@ -14,17 +14,9 @@ watchlist:
     - jeremyphoward
     - hardmaru
 
-  T2_eval_benchmark:      # eval/benchmark 权威，互动占比高，帖子可直接转选题
+  T2_research_systems:    # 只作系统设计与研究判断信号；不得因 benchmark / launch 自动转选题
     - simonw
-    - swyx
-    - ArtificialAnlys
-    - EpochAIResearch
-    - polynoamial
-    - percyliang          # HELM
-    - DanHendrycks        # MMLU / HLE
-    - natolambert
-    - clefourrier         # HF Leaderboard（⚠️休假至 2026-12）
-    - _jasonwei
+    - percyliang
     - sarahookr
 
   T3_计算生物_医学AI:
@@ -98,7 +90,7 @@ competitors:
 content_rules:
   big4: "永不直接明示 @提及；内涵暗示也尽量少；仅当与 verification/科学强相关时才可轻碰。"
   vertical_peers: "不直接明示；可内涵暗含做对照；语气别太 harsh（不站队衰败、不硬蹭 launch）。"
-  general: "接话只接能挂 verification/discovery 的话题；官方号不加别人/不置顶别人。"
+  general: "接话只接与官网同构的重型问题、产品 design choice 或真实用户决策强相关的话题；benchmark、竞品 launch、泛 verification 不因叙事相似进入互动。官方号不加别人/不置顶别人。"
 
 # ========== 监听参数 ==========
 filter:
