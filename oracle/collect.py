@@ -1,396 +1,925 @@
 #!/usr/bin/env python3
-"""collect.py — Oracle 采集层（2026-07-24 配置化：sources.yml 真驱动）
-读 config/sources.yml，对 status==auto 的源采集候选 spike → stdout / --out。
-每个源的参数（subs/queries/feeds/window/limit）来自 sources.yml，不再硬编码——
-改 sources.yml = 改采集行为。解析逻辑（RSS/Jina/arXiv XML）仍在 python。
-X 只走 safe-social（@kw90qk 只读）；其余 curl / Jina（免费）。
-用法：
-    python3 collect.py --out raw.json
-    --no-x / --no-reddit 跳过对应源
-依赖：/Users/admin/.agent-reach-venv/bin/python（含 PyYAML + safe-social 环境）
+"""Oracle collection and deterministic enrichment for the science content pipeline.
+
+All external signals are normalized into one candidate schema. X and Reddit stay
+read-only through safe-social. Internal materials are never read or persisted here.
 """
-import json, subprocess, time, datetime as dt, argparse, os, re, urllib.request, urllib.parse
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import email.utils
+import hashlib
+import json
+import os
+import re
+import sqlite3
+import subprocess
+import time
+import urllib.parse
+import urllib.request
 import xml.etree.ElementTree as ET
+from collections import Counter
+from pathlib import Path
+from typing import Any
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(HERE)
-SAFE_SOCIAL = "/Users/admin/Apodex/内容/safe-social"
-UA = "Mozilla/5.0 content-machine/1.0"
-_LNAME = lambda el: el.tag.rsplit("}", 1)[-1]   # 去 XML 命名空间
 
-def load_yaml(path):
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parent
+SAFE_SOCIAL = os.environ.get("APODEX_SAFE_SOCIAL", str(Path.home() / "Apodex" / "内容" / "safe-social"))
+STATE_DB = Path(
+    os.environ.get(
+        "APODEX_CONTENT_STATE_DB",
+        str(Path.home() / "Library" / "Application Support" / "Apodex Content Machine" / "oracle.sqlite3"),
+    )
+).expanduser()
+UA = "Mozilla/5.0 content-machine/2.0"
+SOURCE_HEALTH: dict[str, dict[str, Any]] = {}
+
+
+def load_yaml(path: Path) -> dict[str, Any]:
     import yaml
-    return yaml.safe_load(open(path, encoding="utf-8"))
 
-def iso_age_h(iso, now):
-    try:
-        t = dt.datetime.fromisoformat(iso)
-        return (now - t).total_seconds() / 3600
-    except Exception:
-        return None
+    with path.open(encoding="utf-8") as handle:
+        return yaml.safe_load(handle) or {}
 
-def _get(url, timeout=20):
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode())
 
-def _fetch_xml(url, timeout=25):
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return ET.fromstring(r.read())
-
-def _jina_read(url, max_chars=8000):
-    req = urllib.request.Request(f"https://r.jina.ai/{url}",
-        headers={"User-Agent": "content-machine/1.0", "Accept": "text/plain"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return r.read().decode()[:max_chars]
-
-def _strip_html(s):
-    return re.sub(r"<[^>]+>", "", s or "").strip()
-
-# ---------- X watchlist（safe-social 只读；参数来自 sources.yml） ----------
-def collect_x(watch_cfg, now, cfg):
-    n = cfg.get("posts_per_handle", 10)
-    w_ind = cfg.get("window_h_individual", 48)
-    w_inst = cfg.get("window_h_institution", 168)
-    out, handles = [], []
-    for tier, hs in watch_cfg["watchlist"].items():
-        for h in hs:
-            handles.append((tier, h, "C4"))
-    for h in watch_cfg.get("institutions", []):   # 机构官号：科学新闻当选题素材，不强塞 C4
-        handles.append(("institution", h, None))
-    for tier, h, hint in handles:
-        try:
-            r = subprocess.run([SAFE_SOCIAL, "x", "user-posts", h, "-n", str(n), "--json"],
-                               capture_output=True, text=True, timeout=90)
-            posts = (json.loads(r.stdout) or {}).get("data") or []
-        except Exception as e:
-            print(f"  [x] {h}: ERR {e}"); time.sleep(1.2); continue
-        for p in posts:
-            if p.get("isRetweet"): continue
-            age = iso_age_h(p.get("createdAtISO", ""), now)
-            max_age = w_inst if tier == "institution" else w_ind
-            if age is None or age > max_age or age < 0: continue
-            m = p.get("metrics") or {}
-            eng = m.get("likes",0)+2*m.get("retweets",0)+2*m.get("quotes",0)+m.get("replies",0)
-            out.append({
-                "source": "x_watchlist", "pillar_hint": hint, "tier": tier,
-                "handle": h, "url": f"https://x.com/{h}/status/{p['id']}",
-                "text": p.get("text","")[:500], "lang": p.get("lang"),
-                "age_h": round(age,1), "eng": eng, "metrics": m,
-            })
-        time.sleep(1.2)
-    return out
-
-def _x_age_h(created, now):
-    """X search 的 createdAt 是 Twitter 格式 'Thu Jul 23 10:22:18 +0000 2026'。"""
-    try:
-        t = dt.datetime.strptime(created, "%a %b %d %H:%M:%S %z %Y")
-        return (now - t).total_seconds() / 3600
-    except Exception:
-        return None
-
-def collect_x_search(now, cfg):
-    """① / ④ 从 X 捞非 watchlist 的真实抱怨/争论/翻车（safe-social x search，@kw90qk 只读）。
-    ⚠️ 拉开间隔别连甩(限流)、别用 macOS 没有的 timeout。判官判 ①(做原创难题) 或 ④(顺势接话)。"""
-    groups = cfg.get("queries", {})
-    queries = []
-    if isinstance(groups, dict):
-        for qs in groups.values(): queries += list(qs or [])
+def _health(label: str, *, ok: bool, count: int = 0, error: str | None = None) -> None:
+    row = SOURCE_HEALTH.setdefault(label, {"calls": 0, "ok_calls": 0, "errors": 0, "items": 0})
+    row["calls"] += 1
+    row["items"] += count
+    if ok:
+        row["ok_calls"] += 1
     else:
-        queries = list(groups or [])
-    n = cfg.get("per_query", 6)
-    window = cfg.get("window_h", 336)
-    min_eng = cfg.get("min_engagement", 5)
-    out, seen = [], set()
-    for q in queries:
-        try:
-            r = subprocess.run([SAFE_SOCIAL, "x", "search", q, "-n", str(n), "--json"],
-                               capture_output=True, text=True, timeout=90)
-            data = (json.loads(r.stdout) or {}).get("data") or []
-        except Exception as e:
-            print(f"  [x_search:{q[:20]}] ERR {e}"); time.sleep(2.5); continue
-        for p in data:
-            pid, text = p.get("id"), p.get("text", "")
-            if not pid or pid in seen: continue
-            m = p.get("metrics") or {}
-            eng = m.get("likes",0)+2*m.get("retweets",0)+2*m.get("quotes",0)+m.get("replies",0)
-            if eng < min_eng: continue                       # 过滤零互动噪音（生人搜索噪音多）
-            age = _x_age_h(p.get("createdAt", ""), now)
-            if age is not None and window and (age > window or age < 0): continue
-            seen.add(pid)
-            author = (p.get("author") or {}).get("screenName", "")
-            out.append({
-                "source": "x_search", "pillar_hint": None, "query": q,
-                "handle": author, "url": f"https://x.com/{author}/status/{pid}",
-                "text": text[:500], "lang": p.get("lang"),
-                "age_h": round(age,1) if age is not None else 0, "eng": eng, "metrics": m,
-            })
-        time.sleep(2.5)  # 拉开间隔防限流
-    return out
+        row["errors"] += 1
+        row["last_error"] = (error or "unknown error")[:500]
 
-def collect_hn(cfg):
-    out, q, hits = [], cfg.get("query", "AI"), cfg.get("hits", 8)
-    try:
-        d = _get(f"https://hn.algolia.com/api/v1/search?tags=front_page&query={urllib.parse.quote(q)}&hitsPerPage={hits}")
-        for h in d.get("hits", []):
-            out.append({
-                "source": "hackernews", "pillar_hint": None,
-                "url": h.get("url") or f"https://news.ycombinator.com/item?id={h['objectID']}",
-                "text": h.get("title",""), "lang": "en",
-                "points": h.get("points",0), "age_h": 0, "eng": h.get("points",0),
-            })
-    except Exception as e:
-        print(f"  [hn] ERR {e}")
-    return out
 
-def collect_arxiv(now, cfg):
-    """arXiv 多 query——存 title + summary 片段（judge 需要正文不只标题）。"""
-    NS = {"a": "http://www.w3.org/2005/Atom"}
-    queries = cfg.get("queries", {}) or {}
-    window, mx = cfg.get("window_h", 168), cfg.get("max_results", 10)
-    out = []
-    for label, q in queries.items():
-        try:
-            url = ("http://export.arxiv.org/api/query?search_query=" + urllib.parse.quote(q) +
-                   f"&sortBy=submittedDate&sortOrder=descending&max_results={mx}")
-            root = _fetch_xml(url)
-        except Exception as e:
-            print(f"  [arxiv:{label}] ERR {e}"); time.sleep(2); continue
-        for e in root.findall("a:entry", NS):
-            title = (e.findtext("a:title", "", NS) or "").strip().replace("\n", " ")
-            summ = (e.findtext("a:summary", "", NS) or "").strip().replace("\n", " ")
-            aid = (e.findtext("a:id", "", NS) or "").strip()
-            pub = (e.findtext("a:published", "", NS) or "").strip()
-            age = iso_age_h(pub.replace("Z", "+00:00"), now) if pub else None
-            if age is None or age > window: continue
-            text = title if not summ else f"{title} — {summ}"
-            out.append({
-                "source": "arxiv", "pillar_hint": None, "arxiv_q": label,
-                "url": aid, "text": text[:600], "lang": "en", "age_h": round(age, 1), "eng": 0,
-            })
-        time.sleep(3)  # arXiv 礼貌间隔
-    return out
-
-def collect_rss(now, cfg):
-    """Journal RSS（含 Retraction Watch）——存 title + description 片段。"""
-    feeds, lim = cfg.get("feeds", {}) or {}, cfg.get("limit_per_feed", 15)
-    out = []
-    for name, url in feeds.items():
-        try:
-            root = _fetch_xml(url)
-        except Exception as e:
-            print(f"  [rss:{name}] ERR {e}"); continue
-        items = [el for el in root.iter() if _LNAME(el) in ("item", "entry")]  # RSS1.0/2.0/Atom 通吃
-        for it in items[:lim]:
-            title, link, desc = "", "", ""
-            for ch in it:
-                ln = _LNAME(ch)
-                if ln == "title" and ch.text: title = ch.text.strip()
-                elif ln == "link": link = (ch.get("href") or ch.text or "").strip()
-                elif ln in ("description", "summary") and ch.text: desc = _strip_html(ch.text)[:200]
-            if title and link:
-                text = title if not desc else f"{title} — {desc}"
-                out.append({
-                    "source": f"rss:{name}", "pillar_hint": None,
-                    "url": link, "text": text[:500], "lang": "en", "age_h": 0, "eng": 0,
-                })
-    return out
-
-def collect_hf(cfg):
-    out, lim = [], cfg.get("limit", 8)
-    try:
-        d = _get(f"https://huggingface.co/api/daily_papers?limit={lim}")
-        for p in d:
-            pa = p.get("paper", {})
-            title = pa.get("title","")
-            summ = (pa.get("summary") or "").strip().replace("\n"," ")
-            text = title if not summ else f"{title} — {summ}"
-            out.append({
-                "source": "hf_papers", "pillar_hint": None,
-                "url": f"https://arxiv.org/abs/{pa.get('id')}",
-                "text": text[:600], "lang": "en",
-                "upvotes": pa.get("upvotes",0), "age_h": 0, "eng": pa.get("upvotes",0),
-            })
-    except Exception as e:
-        print(f"  [hf] ERR {e}")
-    return out
-
-def collect_reddit(now, cfg):
-    """从业者问痛(①)。safe-social 封了 `sub` 命令 → 改 `search "subreddit:<版> <痛点词>"`
-    拉 top(高赞经典)——痛点常青，捞版里被认可的真金，不看"最近谁发帖"的运气。
-    subs 分 ICP 组→帖子带 icp_hint。"""
-    sort = cfg.get("sort", "top")
-    twin = cfg.get("time", "year")
-    lim = cfg.get("limit_per_query", 12)
-    pain = cfg.get("pain_query", "")
-    subs_cfg = cfg.get("subs", {})
-    pairs = []
-    if isinstance(subs_cfg, dict):                 # 分组 {ICP: [subs]}
-        for icp, subs in subs_cfg.items():
-            for s in (subs or []): pairs.append((s, icp))
-    else:                                          # 平铺 [subs]
-        for s in (subs_cfg or []): pairs.append((s, None))
-    out, seen = [], set()
-    for sub, icp in pairs:
-        q = f"subreddit:{sub} {pain}".strip()
-        try:
-            r = subprocess.run([SAFE_SOCIAL, "reddit", "search", q,
-                                "--sort", sort, "--time", twin, "--limit", str(lim), "--json"],
-                               capture_output=True, text=True, timeout=90)
-            children = (((json.loads(r.stdout) or {}).get("data") or {}).get("data") or {}).get("children") or []
-        except Exception as e:
-            print(f"  [reddit:{sub}] ERR {e}"); time.sleep(1.5); continue
-        for ch in children:
-            p = ch.get("data") or {}
-            if p.get("stickied"): continue
-            pid = p.get("id")
-            if pid and pid in seen: continue
-            if pid: seen.add(pid)
-            created = p.get("created_utc")
-            age = (now.timestamp() - float(created)) / 3600 if created else None
-            title, body = p.get("title", ""), (p.get("selftext") or "")[:300]
-            out.append({
-                "source": "reddit", "pillar_hint": None, "sub": sub, "icp_hint": icp,
-                "url": "https://reddit.com" + (p.get("permalink") or ""),
-                "text": (title + " " + body).strip()[:500], "lang": "en",
-                "age_h": round(age, 1) if age is not None else 0,      # 不再按窗口砍——top 高赞常青
-                "eng": p.get("score", 0) + p.get("num_comments", 0),
-            })
-        time.sleep(1.5)  # 拉开间隔防限流
-    return out
-
-def collect_metaculus(cfg):
-    """Metaculus 预测题——Jina 抓搜索页 #### [title](url)（REST API 已 403）。"""
-    url, out = cfg.get("url"), []
-    if not url: return out
-    try:
-        text = _jina_read(url, max_chars=8000)
-        for m in re.finditer(r'####\s*\[([^\]]{15,})\]\((https://www\.metaculus\.com/questions/\d+/[^\)#]+)\)', text):
-            out.append({
-                "source": "prediction_banks", "pillar_hint": "C1",
-                "url": m.group(2).strip(), "text": m.group(1).strip(), "lang": "en", "age_h": 0, "eng": 0,
-            })
-    except Exception as e:
-        print(f"  [metaculus] ERR {e}")
-    return out
-
-def collect_official_challenges(cfg):
-    """官方悬赏——Jina 抓页链接 + 路径过滤（过滤规则硬编码，pages 配置化）。"""
-    pages, out = cfg.get("pages", {}) or {}, []
-    for name, url in pages.items():
-        try:
-            text = _jina_read(url)
-            for m in re.finditer(r'\[([^\]]{15,})\]\((https?://[^\)]+)\)', text):
-                title, link = m.group(1).strip(), m.group(2).strip()
-                if link.endswith(('.svg', '.png', '.jpg')): continue
-                if 'usa.gov' in link and not re.search(r'/challenges/[a-z]', link): continue
-                if 'xprize.org' in link and not re.search(r'/competitions/[a-z]', link): continue
-                if 'arpa-h.gov' in link and '/programs/' not in link and '/open-funding' not in link: continue
-                out.append({
-                    "source": "official_challenges", "pillar_hint": "C1",
-                    "url": link, "text": f"[{name}] {title}", "lang": "en", "age_h": 0, "eng": 0,
-                })
-        except Exception as e:
-            print(f"  [challenges:{name}] ERR {e}")
-        time.sleep(1)
-    return out
-
-def _google_news(queries, per, source_tag):
-    """Google News RSS（免费无 key）通用采集——存 title + description 片段。"""
-    out, seen = [], set()
-    for q in queries:
-        try:
-            url = "https://news.google.com/rss/search?q=" + urllib.parse.quote(q) + "&hl=en-US&gl=US&ceid=US:en"
-            root = _fetch_xml(url)
-        except Exception as e:
-            print(f"  [{source_tag}:{q[:22]}] ERR {e}"); time.sleep(1.5); continue
-        items = [el for el in root.iter() if _LNAME(el) == "item"]
-        for it in items[:per]:
-            title, link, desc = "", "", ""
-            for ch in it:
-                ln = _LNAME(ch)
-                if ln == "title" and ch.text: title = ch.text.strip()
-                elif ln == "link" and ch.text: link = ch.text.strip()
-                elif ln == "description" and ch.text: desc = _strip_html(ch.text)[:180]
-            if not title or not link or title.endswith("- Google News") or title in seen: continue
-            seen.add(title)
-            text = title if not desc else f"{title} — {desc}"
-            out.append({
-                "source": source_tag, "pillar_hint": None,
-                "url": link, "text": text[:500], "lang": "en", "age_h": 0, "eng": 0,
-            })
-        time.sleep(1.5)  # 礼貌间隔
-    return out
-
-def collect_ai_incidents(cfg):
-    """② 事件源——AI 在 science/deeptech 闯祸(ICP 镜头)。判官 ICP 闸砍客服/消费噪音。"""
-    return _google_news(cfg.get("queries", []) or [], cfg.get("per_query", 8), "ai_incident")
-
-def collect_domain_news(cfg):
-    """① 领域源——研究所/deeptech 的领域发展(pharma/临床/政策/市场/技术),判官按 A/B/C 框成预测题。
-    ⚠️ 新闻是'发生了啥'(过去式)，判官把它框成'围绕它的开放预测题'(A/B/C)——是 agent 判断不是纯筛。"""
-    return _google_news(cfg.get("queries", []) or [], cfg.get("per_query", 6), "domain")
-    return out
-
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--out")
-    ap.add_argument("--no-x", action="store_true", help="跳过 X（safe-social 不可用时）")
-    ap.add_argument("--no-reddit", action="store_true", help="跳过 Reddit")
-    args = ap.parse_args()
-
-    now = dt.datetime.now(dt.timezone.utc)
-    src = load_yaml(os.path.join(REPO, "config", "sources.yml"))
-    watch = load_yaml(os.path.join(REPO, "config", "watchlist.yml"))
-    def cfg(name): return src.get(name) or {}
-    def on(name): return cfg(name).get("status") == "auto"
-
-    cands = []
-    if on("hackernews"): cands += collect_hn(cfg("hackernews"))
-    if on("hf_papers"): cands += collect_hf(cfg("hf_papers"))
-    if on("arxiv"):
-        print("collect: arxiv (multi-query) ..."); cands += collect_arxiv(now, cfg("arxiv"))
-    if on("journal_rss"): cands += collect_rss(now, cfg("journal_rss"))
-    if on("prediction_banks") or on("official_challenges"):
-        print("collect: C1 专属 (Metaculus + 悬赏) ...")
-        if on("prediction_banks"): cands += collect_metaculus(cfg("prediction_banks"))
-        if on("official_challenges"): cands += collect_official_challenges(cfg("official_challenges"))
-    if on("ai_incident_db"):
-        print("collect: ② AI 闯祸事件 (Google News, ICP 镜头) ...")
-        cands += collect_ai_incidents(cfg("ai_incident_db"))
-    if on("domain_news"):
-        print("collect: ① 领域发展 (Google News, 老板7类, 判官框预测题) ...")
-        cands += collect_domain_news(cfg("domain_news"))
-    if on("practitioner_pain_reddit") and not args.no_reddit:
-        print("collect: Reddit (safe-social 只读) ...")
-        cands += collect_reddit(now, cfg("practitioner_pain_reddit"))
-    if on("x_watchlist") and not args.no_x:
-        print("collect: X watchlist (safe-social 只读) ...")
-        cands += collect_x(watch, now, cfg("x_watchlist"))
-    if on("x_keyword_search") and not args.no_x:
-        print("collect: X 关键词搜生人 (safe-social 只读, 判官判①/④) ...")
-        cands += collect_x_search(now, cfg("x_keyword_search"))
-
-    # 去重：归一化 URL（arXiv 抹 abs/pdf/版本号差异）
-    def norm(u):
-        u = (u or "").lower().split("://")[-1].rstrip("/")
-        m = re.search(r"arxiv\.org/(?:abs|pdf)/(\d{4}\.\d+)", u)
-        return "arxiv:" + m.group(1) if m else u
-    seen, deduped = set(), []
-    for c in cands:
-        k = norm(c.get("url"))
-        if k in seen: continue
-        seen.add(k); deduped.append(c)
-    dropped = len(cands) - len(deduped); cands = deduped
-    payload = {"collected_at": now.isoformat(), "count": len(cands), "deduped": dropped, "candidates": cands}
-    print(f"dedup: 去重 {dropped} 条")
-    if args.out:
-        json.dump(payload, open(args.out, "w"), ensure_ascii=False, indent=1)
-        print(f"wrote {len(cands)} candidates -> {args.out}")
-    else:
-        print(json.dumps(payload, ensure_ascii=False, indent=1)[:2000])
+def _unwrap(payload: Any) -> Any:
+    if isinstance(payload, dict) and payload.get("ok") is True and "data" in payload:
+        return payload["data"]
     return payload
+
+
+def _run_safe_json(args: list[str], label: str, timeout: int = 90) -> Any:
+    result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or f"exit {result.returncode}").strip()
+        _health(label, ok=False, error=detail)
+        raise RuntimeError(detail[:500])
+    raw = result.stdout.lstrip()
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as strict_error:
+        try:
+            payload, end = json.JSONDecoder().raw_decode(raw)
+        except json.JSONDecodeError as exc:
+            _health(label, ok=False, error=f"invalid JSON: {exc}")
+            raise RuntimeError(f"invalid JSON from {label}") from exc
+        remainder = raw[end:].strip()
+        if remainder and "More:" not in remainder:
+            _health(label, ok=False, error=f"unexpected text after JSON: {strict_error}")
+            raise RuntimeError(f"unexpected text after JSON from {label}")
+    payload = _unwrap(payload)
+    size = len(payload) if isinstance(payload, list) else 1
+    _health(label, ok=True, count=size)
+    return payload
+
+
+def _get_json(url: str, timeout: int = 25) -> Any:
+    request = urllib.request.Request(url, headers={"User-Agent": UA})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode())
+
+
+def _fetch_xml(url: str, timeout: int = 25) -> ET.Element:
+    request = urllib.request.Request(url, headers={"User-Agent": UA})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return ET.fromstring(response.read())
+
+
+def _jina_read(url: str, max_chars: int = 12000) -> str:
+    request = urllib.request.Request(
+        f"https://r.jina.ai/{url}",
+        headers={"User-Agent": UA, "Accept": "text/plain"},
+    )
+    with urllib.request.urlopen(request, timeout=35) as response:
+        return response.read().decode(errors="replace")[:max_chars]
+
+
+def _strip_html(value: str | None) -> str:
+    return re.sub(r"<[^>]+>", " ", value or "").replace("&nbsp;", " ").strip()
+
+
+def _parse_datetime(value: Any) -> dt.datetime | None:
+    if not value:
+        return None
+    if isinstance(value, (int, float)):
+        return dt.datetime.fromtimestamp(float(value), tz=dt.timezone.utc)
+    raw = str(value).strip()
+    for parser in (
+        lambda: dt.datetime.fromisoformat(raw.replace("Z", "+00:00")),
+        lambda: dt.datetime.strptime(raw, "%a %b %d %H:%M:%S %z %Y"),
+        lambda: email.utils.parsedate_to_datetime(raw),
+    ):
+        try:
+            parsed = parser()
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=dt.timezone.utc)
+            return parsed.astimezone(dt.timezone.utc)
+        except (ValueError, TypeError, OverflowError):
+            continue
+    return None
+
+
+def _age_h(value: Any, now: dt.datetime) -> float | None:
+    parsed = _parse_datetime(value)
+    return (now - parsed).total_seconds() / 3600 if parsed else None
+
+
+def _canonical_url(url: str) -> str:
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    parsed = urllib.parse.urlsplit(raw if "://" in raw else f"https://{raw}")
+    host = parsed.netloc.lower().removeprefix("www.")
+    path = parsed.path.rstrip("/") or "/"
+    if host in {"x.com", "twitter.com", "reddit.com", "old.reddit.com"}:
+        query = ""
+    else:
+        kept = [
+            (key, value)
+            for key, value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+            if not key.lower().startswith("utm_")
+        ]
+        query = urllib.parse.urlencode(kept)
+    return urllib.parse.urlunsplit(("https", host, path, query, ""))
+
+
+def _normalized_text(text: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"https?://\S+", "", text or "")).strip().lower()
+
+
+def _action_hints(platform: str) -> list[str]:
+    if platform == "x":
+        return ["original_post", "x_reply", "x_quote"]
+    if platform == "reddit":
+        return ["original_post", "reddit_reply"]
+    return ["original_post"]
+
+
+def make_signal(
+    *,
+    platform: str,
+    source_path: str,
+    url: str,
+    text: str,
+    external_id: str | None = None,
+    title: str | None = None,
+    author: dict[str, Any] | None = None,
+    published_at: Any = None,
+    metrics: dict[str, Any] | None = None,
+    source_mode: str | None = None,
+    provenance: dict[str, Any] | None = None,
+    context: dict[str, Any] | None = None,
+    lang: str | None = "en",
+    known_author: bool = False,
+    institution: bool = False,
+) -> dict[str, Any]:
+    canonical = _canonical_url(url)
+    clean_text = _normalized_text(text)
+    stable_key = f"{platform}:{external_id}" if external_id else canonical or clean_text
+    candidate_id = "cand_" + hashlib.sha256(stable_key.encode()).hexdigest()[:16]
+    content_hash = hashlib.sha256(clean_text.encode()).hexdigest()
+    story_basis = re.sub(r"[^a-z0-9 ]", "", clean_text)[:500]
+    story_key = hashlib.sha256(story_basis.encode()).hexdigest()[:20]
+    published = _parse_datetime(published_at)
+    metric_values = metrics or {}
+    engagement = (
+        int(metric_values.get("likes") or metric_values.get("score") or 0)
+        + 2 * int(metric_values.get("retweets") or 0)
+        + 2 * int(metric_values.get("quotes") or 0)
+        + int(metric_values.get("replies") or metric_values.get("num_comments") or 0)
+    )
+    return {
+        "candidate_id": candidate_id,
+        "external_id": str(external_id or ""),
+        "platform": platform,
+        "source": platform,
+        "source_role": "discovery",
+        "source_path": source_path,
+        "discovery_paths": [source_path],
+        "source_mode": source_mode,
+        "url": url,
+        "canonical_url": canonical,
+        "title": title or "",
+        "text": (text or "").strip()[:4000],
+        "content_hash": content_hash,
+        "story_key": story_key,
+        "lang": lang,
+        "published_at": published.isoformat() if published else None,
+        "age_h": None,
+        "author": author or {},
+        "authority": {
+            "verified": bool((author or {}).get("verified")),
+            "known_watchlist": known_author,
+            "institution": institution,
+        },
+        "metrics": metric_values,
+        "engagement": engagement,
+        "provenance": [provenance or {}],
+        "context": context or {},
+        "domain_hints": [],
+        "research_task_hints": [],
+        "column_hints": [],
+        "action_hints": _action_hints(platform),
+    }
+
+
+def _tweet_signal(
+    post: dict[str, Any],
+    *,
+    source_path: str,
+    now: dt.datetime,
+    source_mode: str | None = None,
+    provenance: dict[str, Any] | None = None,
+    known_author: bool = False,
+    institution: bool = False,
+) -> dict[str, Any] | None:
+    post_id = str(post.get("id") or "")
+    author_data = post.get("author") or {}
+    handle = str(author_data.get("screenName") or provenance and provenance.get("handle") or "").lstrip("@")
+    if not post_id or not handle:
+        return None
+    article = " ".join(filter(None, [post.get("articleTitle"), post.get("articleText")]))
+    text = "\n\n".join(filter(None, [str(post.get("text") or ""), article]))
+    created = post.get("createdAtISO") or post.get("createdAt")
+    signal = make_signal(
+        platform="x",
+        source_path=source_path,
+        url=f"https://x.com/{handle}/status/{post_id}",
+        external_id=post_id,
+        text=text,
+        author={
+            "id": author_data.get("id"),
+            "handle": handle,
+            "name": author_data.get("name"),
+            "verified": bool(author_data.get("verified")),
+        },
+        published_at=created,
+        metrics=post.get("metrics") or {},
+        source_mode=source_mode,
+        provenance=provenance,
+        context={
+            "urls": post.get("urls") or [],
+            "media": post.get("media") or [],
+            "quoted": post.get("quotedTweet"),
+        },
+        lang=post.get("lang") or "en",
+        known_author=known_author,
+        institution=institution,
+    )
+    signal["age_h"] = round(_age_h(created, now), 1) if _age_h(created, now) is not None else None
+    return signal
+
+
+def _quoted_signal(parent: dict[str, Any], now: dt.datetime, parent_signal: dict[str, Any]) -> dict[str, Any] | None:
+    quoted = parent.get("quotedTweet")
+    if not isinstance(quoted, dict):
+        return None
+    quoted_id = str(quoted.get("id") or "")
+    quoted_author = quoted.get("author") or {}
+    handle = str(quoted_author.get("screenName") or "").lstrip("@")
+    if not quoted_id or not handle:
+        return None
+    return make_signal(
+        platform="x",
+        source_path="x_conversation_quote",
+        url=f"https://x.com/{handle}/status/{quoted_id}",
+        external_id=quoted_id,
+        text=str(quoted.get("text") or ""),
+        author={"handle": handle, "name": quoted_author.get("name"), "verified": False},
+        metrics={},
+        provenance={"found_in": parent_signal["candidate_id"], "via": "quote"},
+        context={"quoted_by": parent_signal["url"]},
+        lang=parent.get("lang") or "en",
+    )
+
+
+def _x_signals(
+    posts: list[dict[str, Any]],
+    *,
+    source_path: str,
+    now: dt.datetime,
+    source_mode: str | None,
+    provenance: dict[str, Any],
+    window_h: int,
+    min_engagement: int,
+    known_author: bool = False,
+    institution: bool = False,
+) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for post in posts:
+        if post.get("isRetweet"):
+            continue
+        signal = _tweet_signal(
+            post,
+            source_path=source_path,
+            now=now,
+            source_mode=source_mode,
+            provenance=provenance,
+            known_author=known_author,
+            institution=institution,
+        )
+        if not signal:
+            continue
+        age = signal.get("age_h")
+        if age is not None and (age < 0 or age > window_h):
+            continue
+        if signal["engagement"] < min_engagement:
+            continue
+        output.append(signal)
+        quoted = _quoted_signal(post, now, signal)
+        if quoted:
+            output.append(quoted)
+    return output
+
+
+def _watch_handles(watch_cfg: dict[str, Any]) -> list[tuple[str, str, bool]]:
+    handles: list[tuple[str, str, bool]] = []
+    for tier, names in (watch_cfg.get("watchlist") or {}).items():
+        handles.extend((str(name).lstrip("@"), str(tier), False) for name in names or [])
+    handles.extend((str(name).lstrip("@"), "institution", True) for name in watch_cfg.get("institutions") or [])
+    return handles
+
+
+def collect_x_watchlist(watch_cfg: dict[str, Any], now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    limit = int(cfg.get("posts_per_handle", 12))
+    interval = float(cfg.get("request_interval_s", 1.2))
+    for handle, tier, institution in _watch_handles(watch_cfg):
+        try:
+            posts = _run_safe_json(
+                [SAFE_SOCIAL, "x", "user-posts", handle, "-n", str(limit), "--json"],
+                "x_watchlist",
+            )
+            if not isinstance(posts, list):
+                posts = []
+            window = int(cfg.get("window_h_institution" if institution else "window_h_individual", 168 if institution else 72))
+            output.extend(
+                _x_signals(
+                    posts,
+                    source_path="x_watchlist",
+                    now=now,
+                    source_mode="timeline",
+                    provenance={"handle": handle, "tier": tier},
+                    window_h=window,
+                    min_engagement=0,
+                    known_author=True,
+                    institution=institution,
+                )
+            )
+        except Exception as exc:
+            print(f"  [x_watchlist:{handle}] ERR {exc}")
+        time.sleep(interval)
+    return output
+
+
+def _flatten_queries(groups: Any) -> list[tuple[str, str]]:
+    if isinstance(groups, dict):
+        return [(str(group), str(query)) for group, queries in groups.items() for query in queries or []]
+    return [("default", str(query)) for query in groups or []]
+
+
+def collect_x_search(now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    interval = float(cfg.get("request_interval_s", 2.0))
+    lang = str(cfg.get("lang", "en"))
+    excluded = [str(item) for item in cfg.get("exclude") or []]
+    for group, query in _flatten_queries(cfg.get("queries")):
+        for mode, mode_cfg in (cfg.get("modes") or {}).items():
+            args = [SAFE_SOCIAL, "x", "search", query, "--type", str(mode), "--lang", lang]
+            for item in excluded:
+                args.extend(["--exclude", item])
+            args.extend(["-n", str(mode_cfg.get("per_query", 10)), "--json"])
+            try:
+                posts = _run_safe_json(args, f"x_query_{str(mode).lower()}")
+                if not isinstance(posts, list):
+                    posts = []
+                output.extend(
+                    _x_signals(
+                        posts,
+                        source_path=f"x_query_{str(mode).lower()}",
+                        now=now,
+                        source_mode=str(mode),
+                        provenance={"query_group": group, "query": query},
+                        window_h=int(mode_cfg.get("window_h", 168)),
+                        min_engagement=int(mode_cfg.get("min_engagement", 0)),
+                    )
+                )
+            except Exception as exc:
+                print(f"  [x_query:{mode}:{query[:30]}] ERR {exc}")
+            time.sleep(interval)
+    return output
+
+
+def collect_x_conversation(watch_cfg: dict[str, Any], now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    handles = [item[0] for item in _watch_handles(watch_cfg)]
+    if not handles:
+        return []
+    count = min(int(cfg.get("handles_per_run", 8)), len(handles))
+    start = now.date().toordinal() % len(handles)
+    selected = [handles[(start + offset) % len(handles)] for offset in range(count)]
+    output: list[dict[str, Any]] = []
+    interval = float(cfg.get("request_interval_s", 2.0))
+    mode = str(cfg.get("mode", "Latest"))
+    for seed in selected:
+        args = [
+            SAFE_SOCIAL,
+            "x",
+            "search",
+            "",
+            "--to",
+            seed,
+            "--type",
+            mode,
+            "--lang",
+            "en",
+            "--exclude",
+            "retweets",
+            "-n",
+            str(cfg.get("per_handle", 12)),
+            "--json",
+        ]
+        try:
+            posts = _run_safe_json(args, "x_conversation")
+            if not isinstance(posts, list):
+                posts = []
+            output.extend(
+                _x_signals(
+                    posts,
+                    source_path="x_conversation",
+                    now=now,
+                    source_mode=mode,
+                    provenance={"seed_handle": seed, "relation": "reply_to"},
+                    window_h=int(cfg.get("window_h", 72)),
+                    min_engagement=int(cfg.get("min_engagement", 1)),
+                )
+            )
+        except Exception as exc:
+            print(f"  [x_conversation:{seed}] ERR {exc}")
+        time.sleep(interval)
+    return output
+
+
+def _dynamic_handles(limit: int) -> list[str]:
+    if not STATE_DB.exists():
+        return []
+    try:
+        with sqlite3.connect(STATE_DB) as connection:
+            rows = connection.execute(
+                """SELECT handle FROM accounts
+                   WHERE platform='x' AND status='dynamic_watch'
+                   ORDER BY evidence_keep_count DESC, seen_days DESC
+                   LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [str(row[0]) for row in rows]
+    except sqlite3.Error:
+        return []
+
+
+def collect_x_dynamic(now: dt.datetime, cfg: dict[str, Any], state_cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    handles = _dynamic_handles(int(state_cfg.get("dynamic_watch_limit", 20)))
+    output: list[dict[str, Any]] = []
+    interval = float(cfg.get("request_interval_s", 1.2))
+    for handle in handles:
+        try:
+            posts = _run_safe_json(
+                [SAFE_SOCIAL, "x", "user-posts", handle, "-n", str(cfg.get("posts_per_handle", 10)), "--json"],
+                "x_dynamic_watch",
+            )
+            if not isinstance(posts, list):
+                posts = []
+            output.extend(
+                _x_signals(
+                    posts,
+                    source_path="x_dynamic_watch",
+                    now=now,
+                    source_mode="timeline",
+                    provenance={"handle": handle, "tier": "dynamic"},
+                    window_h=int(cfg.get("window_h", 168)),
+                    min_engagement=0,
+                    known_author=False,
+                )
+            )
+        except Exception as exc:
+            print(f"  [x_dynamic:{handle}] ERR {exc}")
+        time.sleep(interval)
+    return output
+
+
+def _reddit_children(payload: Any) -> list[dict[str, Any]]:
+    node = payload
+    if isinstance(node, dict) and isinstance(node.get("data"), dict):
+        node = node["data"]
+    children = node.get("children") if isinstance(node, dict) else None
+    if not isinstance(children, list):
+        return []
+    return [item.get("data") or {} for item in children if isinstance(item, dict)]
+
+
+def collect_reddit(now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    communities = [
+        (domain, str(sub))
+        for domain, subs in (cfg.get("communities") or {}).items()
+        for sub in subs or []
+    ]
+    queries = [str(query) for query in cfg.get("queries") or []]
+    modes = cfg.get("modes") or []
+    rotate_count = max(1, int(cfg.get("query_rotation_per_sub", 1)))
+    interval = float(cfg.get("request_interval_s", 1.5))
+    output: list[dict[str, Any]] = []
+    for index, (domain, sub) in enumerate(communities):
+        if not queries:
+            break
+        offset = (now.date().toordinal() + index) % len(queries)
+        selected_queries = [queries[(offset + step) % len(queries)] for step in range(rotate_count)]
+        for query in selected_queries:
+            for mode in modes:
+                sort = str(mode.get("sort", "top"))
+                time_filter = str(mode.get("time", "year"))
+                args = [
+                    SAFE_SOCIAL,
+                    "reddit",
+                    "search",
+                    query,
+                    "-r",
+                    sub,
+                    "--sort",
+                    sort,
+                    "--time",
+                    time_filter,
+                    "--limit",
+                    str(mode.get("limit", 12)),
+                    "--json",
+                ]
+                try:
+                    rows = _reddit_children(_run_safe_json(args, f"reddit_{sort}"))
+                    for row in rows:
+                        if row.get("stickied"):
+                            continue
+                        post_id = str(row.get("id") or "")
+                        permalink = str(row.get("permalink") or "")
+                        if not post_id or not permalink:
+                            continue
+                        title = str(row.get("title") or "")
+                        body = str(row.get("selftext") or "")[:2200]
+                        signal = make_signal(
+                            platform="reddit",
+                            source_path=f"reddit_{sort}",
+                            url="https://reddit.com" + permalink,
+                            external_id=post_id,
+                            title=title,
+                            text="\n\n".join(filter(None, [title, body])),
+                            author={"handle": row.get("author"), "verified": False},
+                            published_at=row.get("created_utc"),
+                            metrics={
+                                "score": row.get("score", 0),
+                                "num_comments": row.get("num_comments", 0),
+                                "upvote_ratio": row.get("upvote_ratio"),
+                            },
+                            source_mode=f"{sort}/{time_filter}",
+                            provenance={"community": sub, "domain": domain, "query": query},
+                            context={"subreddit": sub, "domain": domain},
+                            lang="en",
+                        )
+                        signal["age_h"] = round(_age_h(row.get("created_utc"), now), 1) if row.get("created_utc") else None
+                        signal["domain_hints"] = [domain]
+                        output.append(signal)
+                except Exception as exc:
+                    print(f"  [reddit:{sub}:{sort}] ERR {exc}")
+                time.sleep(interval)
+    return output
+
+
+def collect_rss(now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for name, url in (cfg.get("feeds") or {}).items():
+        try:
+            root = _fetch_xml(str(url))
+            items = [element for element in root.iter() if element.tag.rsplit("}", 1)[-1] in {"item", "entry"}]
+            for item in items[: int(cfg.get("limit_per_feed", 18))]:
+                fields: dict[str, str] = {}
+                for child in item:
+                    key = child.tag.rsplit("}", 1)[-1]
+                    if key == "link":
+                        fields[key] = str(child.get("href") or child.text or "").strip()
+                    elif child.text:
+                        fields[key] = child.text.strip()
+                title = fields.get("title", "")
+                link = fields.get("link", "")
+                if not title or not link:
+                    continue
+                summary = _strip_html(fields.get("description") or fields.get("summary"))[:1200]
+                published = fields.get("pubDate") or fields.get("published") or fields.get("updated")
+                signal = make_signal(
+                    platform="rss",
+                    source_path=f"rss_{name.lower()}",
+                    url=link,
+                    title=title,
+                    text=" — ".join(filter(None, [title, summary])),
+                    published_at=published,
+                    provenance={"feed": name, "feed_url": url},
+                    context={"feed": name},
+                )
+                signal["age_h"] = round(_age_h(published, now), 1) if _age_h(published, now) is not None else None
+                output.append(signal)
+            _health(f"rss_{name.lower()}", ok=True, count=len(items))
+        except Exception as exc:
+            _health(f"rss_{name.lower()}", ok=False, error=str(exc))
+            print(f"  [rss:{name}] ERR {exc}")
+    return output
+
+
+def collect_google_news(now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    per_query = int(cfg.get("per_query", 6))
+    for query in cfg.get("queries") or []:
+        url = "https://news.google.com/rss/search?q=" + urllib.parse.quote(str(query)) + "&hl=en-US&gl=US&ceid=US:en"
+        try:
+            root = _fetch_xml(url)
+            items = [element for element in root.iter() if element.tag.rsplit("}", 1)[-1] == "item"]
+            for item in items[:per_query]:
+                fields = {child.tag.rsplit("}", 1)[-1]: child.text or "" for child in item}
+                title, link = fields.get("title", "").strip(), fields.get("link", "").strip()
+                if not title or not link:
+                    continue
+                summary = _strip_html(fields.get("description"))[:800]
+                published = fields.get("pubDate")
+                signal = make_signal(
+                    platform="rss",
+                    source_path="google_news_science",
+                    url=link,
+                    title=title,
+                    text=" — ".join(filter(None, [title, summary])),
+                    published_at=published,
+                    provenance={"query": query},
+                    context={"lead_only": True},
+                )
+                signal["age_h"] = round(_age_h(published, now), 1) if _age_h(published, now) is not None else None
+                output.append(signal)
+            _health("google_news_science", ok=True, count=len(items[:per_query]))
+        except Exception as exc:
+            _health("google_news_science", ok=False, error=str(exc))
+            print(f"  [google_news:{str(query)[:28]}] ERR {exc}")
+        time.sleep(1.2)
+    return output
+
+
+def collect_hackernews(now: dt.datetime, cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    try:
+        query = str(cfg.get("query", "scientific research tools"))
+        data = _get_json(
+            "https://hn.algolia.com/api/v1/search?tags=front_page&query="
+            + urllib.parse.quote(query)
+            + "&hitsPerPage="
+            + str(cfg.get("hits", 8))
+        )
+        output = []
+        for row in data.get("hits") or []:
+            object_id = str(row.get("objectID") or "")
+            url = row.get("url") or f"https://news.ycombinator.com/item?id={object_id}"
+            output.append(
+                make_signal(
+                    platform="web",
+                    source_path="hackernews",
+                    url=url,
+                    external_id=object_id,
+                    title=row.get("title") or "",
+                    text=row.get("title") or "",
+                    author={"handle": row.get("author"), "verified": False},
+                    published_at=row.get("created_at"),
+                    metrics={"score": row.get("points", 0), "num_comments": row.get("num_comments", 0)},
+                    provenance={"query": query},
+                )
+            )
+        _health("hackernews", ok=True, count=len(output))
+        return output
+    except Exception as exc:
+        _health("hackernews", ok=False, error=str(exc))
+        print(f"  [hackernews] ERR {exc}")
+        return []
+
+
+def collect_metaculus(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    url = str(cfg.get("url") or "")
+    if not url:
+        return []
+    try:
+        content = _jina_read(url, 10000)
+        output = []
+        pattern = r"####\s*\[([^\]]{15,})\]\((https://www\.metaculus\.com/questions/\d+/[^\)#]+)\)"
+        for match in re.finditer(pattern, content):
+            output.append(
+                make_signal(
+                    platform="web",
+                    source_path="prediction_bank",
+                    url=match.group(2).strip(),
+                    text=match.group(1).strip(),
+                    title=match.group(1).strip(),
+                    provenance={"index": url},
+                )
+            )
+        _health("prediction_bank", ok=True, count=len(output))
+        return output
+    except Exception as exc:
+        _health("prediction_bank", ok=False, error=str(exc))
+        print(f"  [prediction_bank] ERR {exc}")
+        return []
+
+
+def collect_challenges(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for name, url in (cfg.get("pages") or {}).items():
+        try:
+            content = _jina_read(str(url), 10000)
+            for match in re.finditer(r"\[([^\]]{15,})\]\((https?://[^\)]+)\)", content):
+                title, link = match.group(1).strip(), match.group(2).strip()
+                if link.lower().endswith((".svg", ".png", ".jpg", ".jpeg")):
+                    continue
+                output.append(
+                    make_signal(
+                        platform="web",
+                        source_path="official_challenge",
+                        url=link,
+                        title=title,
+                        text=f"[{name}] {title}",
+                        provenance={"index": url, "program": name},
+                    )
+                )
+            _health(f"challenge_{str(name).lower()}", ok=True)
+        except Exception as exc:
+            _health(f"challenge_{str(name).lower()}", ok=False, error=str(exc))
+            print(f"  [challenge:{name}] ERR {exc}")
+        time.sleep(0.8)
+    return output
+
+
+def merge_signals(signals: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    merged: dict[str, dict[str, Any]] = {}
+    for signal in signals:
+        key = signal["candidate_id"]
+        if key not in merged:
+            merged[key] = signal
+            continue
+        current = merged[key]
+        current["discovery_paths"] = sorted(set(current["discovery_paths"] + signal["discovery_paths"]))
+        current["action_hints"] = sorted(set(current["action_hints"] + signal["action_hints"]))
+        current["provenance"].extend(item for item in signal["provenance"] if item not in current["provenance"])
+        if len(signal.get("text") or "") > len(current.get("text") or ""):
+            current["text"] = signal["text"]
+            current["title"] = signal.get("title") or current.get("title")
+        if int(signal.get("engagement") or 0) > int(current.get("engagement") or 0):
+            current["engagement"] = signal["engagement"]
+            current["metrics"] = signal["metrics"]
+        current["authority"]["verified"] = current["authority"].get("verified") or signal["authority"].get("verified")
+        current["authority"]["known_watchlist"] = current["authority"].get("known_watchlist") or signal["authority"].get("known_watchlist")
+    return list(merged.values()), len(signals) - len(merged)
+
+
+def collect(args: argparse.Namespace) -> dict[str, Any]:
+    now = dt.datetime.now(dt.timezone.utc)
+    sources = load_yaml(REPO / "config" / "sources.yml")
+    watch = load_yaml(REPO / "config" / "watchlist.yml")
+    enabled = lambda name: (sources.get(name) or {}).get("status") == "auto"
+    signals: list[dict[str, Any]] = []
+
+    if enabled("x_watchlist") and not args.no_x:
+        print("collect: X path 1/4 watchlist ...")
+        signals.extend(collect_x_watchlist(watch, now, sources["x_watchlist"]))
+    if enabled("x_keyword_search") and not args.no_x:
+        print("collect: X path 2/4 task queries (Top + Latest) ...")
+        signals.extend(collect_x_search(now, sources["x_keyword_search"]))
+    if enabled("x_conversation_graph") and not args.no_x:
+        print("collect: X path 3/4 conversation graph ...")
+        signals.extend(collect_x_conversation(watch, now, sources["x_conversation_graph"]))
+    if enabled("x_dynamic_watch") and not args.no_x:
+        print("collect: X path 4/4 dynamic watch ...")
+        signals.extend(collect_x_dynamic(now, sources["x_dynamic_watch"], sources.get("state") or {}))
+    if enabled("reddit_discovery") and not args.no_reddit:
+        print("collect: Reddit Top + New ...")
+        signals.extend(collect_reddit(now, sources["reddit_discovery"]))
+    if enabled("science_rss"):
+        signals.extend(collect_rss(now, sources["science_rss"]))
+    if enabled("science_news"):
+        signals.extend(collect_google_news(now, sources["science_news"]))
+    if enabled("prediction_banks"):
+        signals.extend(collect_metaculus(sources["prediction_banks"]))
+    if enabled("official_challenges"):
+        signals.extend(collect_challenges(sources["official_challenges"]))
+    if enabled("hackernews"):
+        signals.extend(collect_hackernews(now, sources["hackernews"]))
+
+    candidates, dropped = merge_signals(signals)
+    platform_counts = Counter(item["platform"] for item in candidates)
+    path_counts = Counter(path for item in candidates for path in item["discovery_paths"])
+    payload = {
+        "schema_version": 2,
+        "collected_at": now.isoformat(),
+        "count": len(candidates),
+        "deduped_in_run": dropped,
+        "platform_counts": dict(platform_counts),
+        "path_counts": dict(path_counts),
+        "source_health": SOURCE_HEALTH,
+        "candidates": candidates,
+    }
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        print(f"wrote {len(candidates)} candidates -> {args.out}")
+    else:
+        print(json.dumps(payload, ensure_ascii=False, indent=2)[:4000])
+    return payload
+
+
+def enrich(args: argparse.Namespace) -> dict[str, Any]:
+    if not args.candidates or not args.out:
+        raise SystemExit("--enrich requires --candidates and --out")
+    with open(args.enrich, encoding="utf-8") as handle:
+        queue = json.load(handle)
+    with open(args.candidates, encoding="utf-8") as handle:
+        source_payload = json.load(handle)
+    selected = queue.get("candidate_ids") or []
+    decisions = {row["candidate_id"]: row for row in queue.get("decisions") or []}
+    candidate_map = {row["candidate_id"]: row for row in source_payload.get("candidates") or []}
+    cfg = load_yaml(REPO / "config" / "sources.yml").get("enrichment") or {}
+    max_chars = int(cfg.get("max_chars", 12000))
+    enriched: list[dict[str, Any]] = []
+
+    for candidate_id in selected:
+        candidate = dict(candidate_map[candidate_id])
+        method, content, status, error = "none", "", "unavailable", None
+        try:
+            if candidate["platform"] == "x" and candidate.get("external_id"):
+                method = "safe-social x tweet"
+                data = _run_safe_json(
+                    [SAFE_SOCIAL, "x", "tweet", candidate["external_id"], "--json"],
+                    "enrich_x",
+                    timeout=120,
+                )
+                content = json.dumps(data, ensure_ascii=False)[:max_chars]
+            elif candidate["platform"] == "reddit" and candidate.get("external_id"):
+                method = "safe-social reddit read"
+                data = _run_safe_json(
+                    [SAFE_SOCIAL, "reddit", "read", candidate["external_id"], "--json"],
+                    "enrich_reddit",
+                    timeout=120,
+                )
+                content = json.dumps(data, ensure_ascii=False)[:max_chars]
+            elif candidate.get("url"):
+                method = "jina reader"
+                content = _jina_read(candidate["url"], max_chars)
+            status = "ok" if content else "empty"
+        except Exception as exc:
+            error = str(exc)[:500]
+            status = "error"
+        candidate["recall_decision"] = decisions.get(candidate_id)
+        candidate["enrichment"] = {
+            "status": status,
+            "method": method,
+            "content": content,
+            "error": error,
+        }
+        enriched.append(candidate)
+
+    payload = {
+        "schema_version": 2,
+        "run_id": queue.get("run_id"),
+        "enriched_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "count": len(enriched),
+        "source_health": SOURCE_HEALTH,
+        "candidates": enriched,
+    }
+    with open(args.out, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+    print(f"enriched {len(enriched)} candidates -> {args.out}")
+    return payload
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--out")
+    parser.add_argument("--no-x", action="store_true")
+    parser.add_argument("--no-reddit", action="store_true")
+    parser.add_argument("--enrich", metavar="QUEUE_JSON")
+    parser.add_argument("--candidates", metavar="CANDIDATES_JSON")
+    args = parser.parse_args()
+    if args.enrich:
+        enrich(args)
+    else:
+        collect(args)
+
 
 if __name__ == "__main__":
     main()

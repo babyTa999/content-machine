@@ -1,145 +1,107 @@
-# content-machine — Apodex X 选题 Oracle
+# content-machine — Apodex Science 选题 Oracle
 
-把"今天发这个明天发那个"换成**平台逻辑驱动 + PROBLEM-FIRST 的选题**。骨架借自 Alex Lieberman
-的 content machine，脑子换成 **Apodex 算法适配的机械预筛 + 语义判官 + 5 内容栏目**（数据实证，非拍脑袋）。
+从可靠的外部母库扩大召回，再用两层 Judge 把“及时、真实、能承接”收敛成可用选题与互动机会。当前只覆盖 Science track；所有内部物料由 Selene 提供，仓库不保存内部路径、原文、截图、数字或未公开产品信息。
 
-> 面向：Apodex 社媒 + 想复用的同事（cc / codex 直接跑）。X 主阵地，先做 X。
+## 当前边界
 
-**两条信条**：① 选题不是"发什么"，是"发这条 X 会把我推给谁"（Phoenix 双塔认身份一致性）。
-② **PROBLEM-FIRST**——先亮 ICP 的痛，让人 problem-aware，*之后*才说 solution 和 Apodex。
+- 目标受众：研究实验室、研究者与科研团队。
+- 核心价值：研究问题、证据边界、决策与验证。
+- X 是最大母库，也是最高召回权重；Reddit 同时服务真实问题发现、原创 seed 与站内互动。
+- Nature / Science RSS、Google News RSS、专业预测与挑战页面、Hacker News 用作补充发现。
+- 官方数据库与正式记录源已预留接口，待单独确认后再配置。
+- 不抓学术诚信、出版争议、作者争议或撤回追踪；不因“新发布”自动加分。
 
-## 30 秒理解 —— 内容生产 7 步
+## 管线
 
+```text
+external sources
+  → unified candidate schema
+  → deterministic prefilter + SQLite cross-day state
+  → Recall Judge
+  → deterministic enrichment
+  → Evidence Judge
+  → original-post pools + X interaction + Reddit interaction
 ```
-① 身份 → ② 栏目 → ③ 来源 → ④ 跑 Oracle → ⑤ 选题·角度·hook·起草 → ⑥ QC → ⑦ 发布·分发
-  主线    5 栏     源×栏映射   collect→score      判官挑→persona→voice     狠编辑    anchor→单推+LinkedIn
-                              →judge→vault        skill(à la carte)
+
+source、column、action 完全解耦。一个 X 或 Reddit 候选可以同时成为原创素材与原平台互动对象；互动动作不会跨平台串池。
+
+## X 四路并行
+
+1. 静态 watchlist：已知研究者、机构与专业账号。
+2. 任务型 query：每组同时跑 `Top` 与 `Latest`；Top 找已被圈内验证的强信号，Latest 找新问题与小账号。
+3. conversation graph：围绕 seed handle 找 replies 与 quote chain，发现 watchlist 之外的真实专业参与者。
+4. dynamic watch：账号多日稳定命中，且至少两次通过 Evidence Judge 后，自动进入外部 SQLite 动态池。
+
+X 的 recall priority 是 6，Reddit 是 4，RSS 是 2，web 是 1。它们只影响 enrichment 排序，不替 Judge 做内容结论，也不是固定配额。
+
+## 内容栏目
+
+| ID | 栏目 | 外部自动发现 |
+|---|---|---|
+| C1 | Problem-aware｜难题求解 | 是 |
+| C2 | Product-aware｜验证拆解 / 反 AI 幻觉 | 是 |
+| C3 | Before It Becomes Official｜定稿之前 | 是 |
+| C4 | Worldview｜Big Idea 世界观 | 否，Selene 供料 |
+| C5 | Claim vs Record｜公开说法 vs 正式记录 | 是；正式记录源待补 |
+| C6 | Social Proof｜#ApodexSolvers | 否，Selene 供料 |
+| C8 | Engagement｜圈内接话 | 展示层，底层仍按平台动作分开 |
+
+栏目细则见 [`docs/02-内容栏目.md`](docs/02-内容栏目.md)，机器配置见 [`config/pillars.yml`](config/pillars.yml)。
+
+## 来源配置
+
+[`config/sources.yml`](config/sources.yml) 是唯一来源开关：
+
+- `auto`：当前脚本自动采集。
+- `staged`：只保留结构，不采集。
+- `manual`：由 Selene 供料，不进入自动外部管线。
+
+X / Reddit 只通过 repo 外的本地只读 safe-social wrapper 调用；可用 `APODEX_SAFE_SOCIAL` 指定路径。账号名单与竞品红线在 [`config/watchlist.yml`](config/watchlist.yml)。
+
+## 两层 Judge
+
+- Recall Judge：按 60 条分批全量判断，再合并校验；每条只能是 `keep_for_enrichment`、`interaction_only`、`watch_only` 或 `reject`。
+- Evidence Judge：读取 enrichment 后做终审；每条只能是 `keep`、`interaction`、`watch` 或 `reject`。
+- [`oracle/score.py`](oracle/score.py) 校验每个输入 ID 恰好被决定一次、column/action 合法、互动平台匹配。模型漏判、重复判或输出非法动作时，运行直接失败，不静默产出。
+- 终审保留项必须拆出 `source_says`、`why_now`、`why_apodex`、`possible_angle`、`inference_boundary` 与 `needs_verification`；成熟度统一为 `Idea`。
+
+Judge 规则在 [`personas/选题judge-X.md`](personas/选题judge-X.md)。
+
+## SQLite 轻量状态
+
+默认位置：
+
+```text
+~/Library/Application Support/Apodex Content Machine/oracle.sqlite3
 ```
 
-前 4 步 = 本 repo 自动化（选题引擎）；后 3 步 = **人 taste 主导 + 按需 skill + gate 兜底**（写作不锁框架）。
+数据库在仓库外，只保存外部 candidate 标识、跨日出现记录、账号统计和 Judge outcome。默认 exact 去重 45 天、story 去重 14 天。可用 `APODEX_CONTENT_STATE_DB` 指向测试或其他本地路径。
 
----
-
-## Phase 1 · 身份（主线）— 解决身份漂移
-
-**身份 = AI for〔science research labs + deeptech startups〕，verification 为内核。**
-这两类 = AFP 两大 ICP 线 = 两大内容线。"我们就是 AI4 他们。"
-
-- **领域（bio / 材料 / 金融 / 监管）只做 instance，不做身份**——今天 bio 明天材料，只要话术骨架 / hashtag / 互动人群一致，Phoenix 眼里仍是同一个号。散一次就学乱一次。
-- **两大 ICP 命名**（走 hashtag + 系列名，不用 X List）：`#Apodex4Science` / `#Apodex4DeepTech` / `#ApodexSolvers`（C 端 UGC）。
-
-📄 全文：[`docs/01-选题哲学.md`](docs/01-选题哲学.md)
-
-## Phase 2 · 内容栏目（5 栏）
-
-每栏找的都是 **PROBLEM / 痛点 / 共鸣**——不自夸、不 showcase 论文、不夸人踩竞品。通用框架 ↔ 我们的栏目：
-
-| 通用栏目 | 我们的栏目 | 找什么（Apodex 具体） | 信号 |
-|---|---|---|---|
-| **Problem-aware** | ① 难题求解（主池） | ICP 真正卡住的硬 PROBLEM（含"预测切面"7+5 类；SSPP 1,482 题库） | 心智·收藏·曝光 |
-| **Product-aware** | ② 验证拆解 / 反 AI 幻觉 | 我们主打 verification → **别人没做好验证、幻觉闯祸的真实 case**（剂量错 / 假判例 / 编造数据） | 收藏·评论 |
-| **Worldview** | ③ 世界观（底色） | discovery model ≠ generative——**从老板 blog 搬现成** | 心智·涨粉 |
-| **Engagement** | ④ 圈内接话（回复 / quote） | (a) 共鸣（同哲学→自陈）(b) 痛点（有人吐槽我们能解的→荐己）。不夸不踩 | 曝光·profile_click |
-| **Social Proof** | ⑤ ApodexSolvers（UGC） | C 端用户用 Apodex 跑的 prompts 展示（Selene 供料） | 涨粉·社区·AFP |
-
-📄 全文：[`docs/02-内容栏目.md`](docs/02-内容栏目.md) ｜ 配置：[`config/pillars.yml`](config/pillars.yml)（栏目 keywords + exclude + icp）
-
-## Phase 3 · 内容来源（源 × 栏目映射）
-
-**原则：每个源过一遍、看命中哪些栏目（多对多），不是一栏一源。** `auto`=脚本已采，`staged`=待接，人工=不走采集。
-
-| 栏目 | 来源 | 状态 |
-|---|---|---|
-| ① Problem-aware | Reddit 7 个问痛版（bioinformatics / computationalbiology / chemistry / statistics / MLQuestions / datascience / MachineLearning） | auto |
-| | Metaculus 预测题（Jina 抓页）· 官方悬赏（USA.gov / XPRIZE / ARPA-H，Jina + 路径过滤） | auto |
-| | arXiv 多 query（降权——多方法论文，判官 Q0 过滤，只留亮出 PROBLEM 的） | auto |
-| ② Product-aware | Retraction Watch RSS（编造 / 撤稿）· arXiv `hallucination/reliability` query | auto |
-| | AI Incident Database（AIAAIC）· Exa 搜 "AI hallucination 闯祸 case"（免费） | staged |
-| | ＋判官从全池语义捞（X 吐槽 / journal / HN 里 AI 闯祸的）—— **闯祸 case 本就稀缺，靠多源汇** | — |
-| ④ Engagement | X watchlist（个人 + 机构官号，见 `watchlist.yml`） | auto |
-| | X 关键词搜生人（共鸣 / 痛点 query）—— **代码未实现，目前只跑 watchlist** | staged |
-| 基础源 | HackerNews front-page · HF daily papers · journal RSS（Nature / NatureComms / Science） | auto |
-| ③ / ⑤ | 老板 blog（③）· 内部 UGC（⑤） | 人工 |
-
-📄 全文：[`config/sources.yml`](config/sources.yml)（每条源的 method / status / query）
-
-## Phase 4 · 跑 Oracle（collect → score → judge → vault）
-
-一键：`./run_oracle.sh`。四步各自的重要部分：
-
-| 步 | 文件 | 干什么（重要部分） |
-|---|---|---|
-| **collect** | [`oracle/collect.py`](oracle/collect.py) | 扫 Phase 3 的源采候选。**X 只走 safe-social（@kw90qk 只读）**。**时间窗口按内容性质**：接话 48h（要鲜）/ X 机构号 168h / Reddit 痛点 168h（常青种子）/ 预测题·悬赏无限制。URL 归一化去重（arXiv 抹版本号） |
-| **score** | [`oracle/score.py`](oracle/score.py) | **机械预筛，不做决策**。①硬剔除真垃圾（`pillars.yml` 的 exclude）②软标签 `[col·icp·s]`（关键词只做提示，**绝不据此毙**）③**problem-first 结构信号**：Reddit 求助帖（help/how/error/[Q][R]）+4 置顶——真痛点是大白话、命中不了术语库，靠结构信号浮上来。**不再有 gate / 阈值** |
-| **judge** | [`personas/选题judge-X.md`](personas/选题judge-X.md)（`claude -p`） | **真正的筛**。读全量候选，逐条**语义**判栏目 + 过 8 条否决问（Q0=PROBLEM-FIRST / 关系 / frame 反幻觉不反能力 / 竞品自吹 / 骂战 / 噪音 / politics / 接得住吗）+ **救回被关键词漏杀的**。culls 到 ~8-12 |
-| **vault** | [`vault/`](vault/) | `DATE.md`（预筛：送判官 + 硬剔除）+ `DATE-judged.md`（判官：保留 + 砍掉，**金标准格式**：日期 H1 / 栏目 H2 / 每栏表格 + 可点击 link / 发·接分开） |
-
-📄 全文：[`docs/03-spike打分.md`](docs/03-spike打分.md)
-
-## Phase 5 · 选题 → 角度 → hook → 起草
-
-判官产出后**人 taste 接手**。各步用什么：
-
-| 步 | 用什么 | 说明 |
-|---|---|---|
-| **选题** | 你从 `vault/DATE-judged.md` 保留清单里挑 | 判官已做语义终审 + 给理由，你拍板 |
-| **角度** | [`personas/角度生成器-X.md`](personas/角度生成器-X.md) | 6 lenses 切角度 + so-what gate |
-| **hook** | [`personas/hook生成器-X.md`](personas/hook生成器-X.md) → skill `eddie-shleyner` 打磨 | 10 moves + Apodex Hook 三型；`julian-shapiro` 备选（偏 viral，不常备） |
-| **起草** | voice skill **à la carte**（想调味取 1 个，不叠不强制） | ①`apodex-tech-voice` / `karpathy-explain`　②`apodex-tech-voice` / `selene-academic-voice`　③搬老板 blog　④`selene-community-voice`　｜ 大件迭代 `selene-content-sop` |
-| **事实核** | [`personas/产品技术专家.md`](personas/产品技术专家.md) | 数字 verbatim / claim 回一手源 / RULES 红线 |
-
-📄 全文：[`docs/05-写作与分发.md`](docs/05-写作与分发.md)（voice skill 备查表）
-
-## Phase 6 · QC（发布前质检）
-
-**打分官 = [`personas/狠编辑-X.md`](personas/狠编辑-X.md)**（改自 newsjack meanest-editor）。7 项 rubric 打分 + 揪 top3 + 逐行开刀 + 重写 hook。三关并进它：
-
-1. **triple-translation test**（声音自然、不像 AI slop）
-2. **算法自查三问**：能独立站住吗？有深互动钩吗？是英文且中 ICP 吗？
-3. **RULES 红线**：slogan verbatim / 无未确认 access·API·pricing / 数字回一手源 / **无偷偷加的承诺（成稿 = 无承诺安全版）**
-
-📄 全文：[`docs/04-算法纪律.md`](docs/04-算法纪律.md)（格式→信号映射 + 平台红线）
-
-## Phase 7 · 发布 + 分发（anchor → repurpose）
-
-一条 anchor（通常 thread）→ 两个方向，**人 taste 主导，狠编辑兜底**：
-
-| 方向 | 用什么 | 关键 |
-|---|---|---|
-| **单推（X 内）** | X 算法（`docs/04`） | 从 anchor 挑能**独立成立**的点各自成推——每条过 **candidate isolation**（自带 hook，不靠上下文） |
-| **LinkedIn 版** | skill `/linkedin-algorithm`（LinkedIn 算法脑）+ `apodex-linkedin-official-style`（只学格式，去老口径） | **不是复制粘贴**，按 LinkedIn 算法（dwell / carousel / golden hour）重排 |
-
-编排走 `selene-content-sop` 的分发步。
-
----
-
-## 快速开始
+## 运行
 
 ```bash
-/Users/admin/.agent-reach-venv/bin/pip install pyyaml   # 依赖，若缺
-
-./run_oracle.sh            # 完整：采集(含X watchlist)→预筛→判官→vault
-./run_oracle.sh --no-x     # 跳过 X（safe-social 不可用时）
+./run_oracle.sh
+./run_oracle.sh --no-x
 ./run_oracle.sh --no-reddit
-./run_oracle.sh --no-judge # 只到预筛，不跑判官
+./run_oracle.sh --no-judge
 ```
 
-## 红线（`~/.claude/CLAUDE.md`）
+流程产物写入 `vault/` 且被 gitignore：raw、Recall 输入与决定、enrichment、Evidence 决定，以及最终 `YYYY-MM-DD-judged.md`。
 
-- **X 只读只走 `~/Apodex/内容/safe-social`（@kw90qk / manual:edge）**——绝不用裸 twitter / agent-reach twitter。X 搜索能用，但别连甩（限流）、**别用 macOS 没有的 `timeout`**。
-- cookie 工具**只读不写**：不发帖 / 回复 / 点赞 / 关注。接话回复本身是人工动作。
-- 对外文案**无偷偷加的承诺**，成稿默认无承诺安全版。
+所需环境：Python + PyYAML、只读 safe-social、`claude` CLI。可用 `APODEX_CONTENT_PY` 指定 Python。采集器不会自动发帖、回复、点赞或关注。
 
-## ⚙️ Apodex 专属（依赖本地 / 个人 skill，clone 通用版时替换）
+## 关键文件
 
-以下指向 Apodex 本地资料或 Selene 个人 skill——**clone 出去拿不到，换产品时替换成你自己的**：
+- [`oracle/collect.py`](oracle/collect.py)：采集、统一 schema、去重合并、enrichment。
+- [`oracle/score.py`](oracle/score.py)：硬排除、SQLite、Judge contract 校验、报告渲染。
+- [`config/sources.yml`](config/sources.yml)：外部母库、X 四路与优先级。
+- [`config/pillars.yml`](config/pillars.yml)：column / domain / research task / action。
+- [`run_oracle.sh`](run_oracle.sh)：七步总管线。
 
-- **产品口径源**（`personas/产品技术专家.md` 核 claim 用）：`~/Apodex/产品资料/*`（技术报告 / Benchmark / 架构 / 产品命名）+ `~/Apodex/RULES.md`
-- **算法拆解依据**：`~/Desktop/X 渠道运营.md`（Phase 4/6/7 的 X 算法机制来源）
-- **voice / 分发 skill**：`apodex-tech-voice` / `selene-*` / `eddie-shleyner` / `/linkedin-algorithm` 等（个人 skill 库，非 repo 文件）
-- **配置**：`config/pillars.yml`（ICP / exclude）· `watchlist.yml`（圈子）· `sources.yml`（Reddit 版 / 悬赏页）—— 全是 Apodex 具体，换产品重填
+更多说明：[`docs/01-选题哲学.md`](docs/01-选题哲学.md) · [`docs/02-内容栏目.md`](docs/02-内容栏目.md) · [`docs/03-spike打分.md`](docs/03-spike打分.md)。
 
-## 迭代纪律
+## TODO｜观察真实产量后再定
 
-模型评的是"互动倾向"不是"文案质量"。跑几周后，用 **X 后台真实互动率**（reply / repost / 收藏 / 完读）
-校准 **`config/pillars.yml`（exclude / keywords）+ 判官口径（`personas/选题judge-X.md`）**。没有打分配置文件了——调优只在这两处。数据说话，不凭感觉。
+- X 的原创素材资格与官号互动资格拆成两套判断：低流量但真实、有价值的内容仍可进入原创母库；`x_reply` / `x_quote` 增加传播量硬门槛与少量可解释的战略例外。
+- 先用当前版本观察实际保留线索数量与质量，由 Selene 人工判断；有足够样本后再校准 views、engagement velocity、账号层级与例外条件。
+- 动态账号统计后续拆为 `content_keep_count` 与 `interaction_grade_count`，避免“经常提供好选题”被自动等同于“值得官号持续互动”。

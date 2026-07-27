@@ -1,30 +1,47 @@
-# 03 · 预筛 + 判官 —— 选题怎么筛
+# 03 · Recall → Enrichment → Evidence
 
-> **2026-07-24 改（B 重构）**：以前是"关键词 gate + 5 维打分 + 过线阈值"（score.py 硬筛）——**已废**，
-> 因为关键词 gate 会把 on-主线但没命中字面词的（如 "LLMs Get Lost in Evolving User Intent"）误杀。
-> 现在两层：**score.py = 机械预筛（不做决策）→ 判官(LLM) = 真正的语义分类 + culls。**
+这套管线不再让单层模型读短摘要后直接拍板。
 
----
+## 1. collect：统一 schema
 
-## 一、score.py — 机械预筛（`oracle/score.py`，不做决策）
+所有来源进入同一 candidate schema：`candidate_id`、platform、source path、discovery paths、url、text、author、authority、metrics、context、domain hints、research-task hints、column hints 与 action hints。
 
-1. **硬剔除**（真垃圾，直接扔）：中文 / 噪音(个人生活·寒暄·直播吆喝) / 竞品自吹·骂战 / 反 AI 能力 frame / 预测结果 / 法律 AI 幻觉判例(已写过)。规则见 `config/pillars.yml` 的 `exclude`。
-2. **软标签**（仅供判官参考，**绝不据此毙**）：
-   - `col`：keyword 命中的栏目提示（C1-C5，没命中=`?`）
-   - `icp`：Apodex4Science / Apodex4DeepTech
-   - `s`：粗排分（soft_score，让判官先看 likely-good；逻辑写死在 score.py，无外部配置）
-3. **不再有 gate / 阈值 / no-column 毙人**——除硬垃圾外全部送判官。
-4. 产出 `vault/YYYY-MM-DD.md`：「📥 送判官候选」+「🗑️ 硬剔除」。
+X 四路、Reddit Top/New、RSS/News 与其他 web source 先在当次运行内按 candidate ID 合并。source 只记录 provenance，不预先决定 column。
 
-## 二、判官 — 真正的筛（`personas/选题judge-X.md`，run_oracle 里走 `claude -p`）
+## 2. deterministic prefilter + SQLite
 
-- 读**全量**送判官候选，逐条**语义**判栏目 + 过否决问（PROBLEM-FIRST / 关系大不大 / frame 对不对 / 竞品自吹 / 骂战站队 / 噪音 / politics / 我们接得住吗）+ **救回被关键词漏杀的**。
-- culls 到真正能用的 ~8-12，出金标准格式（日期 H1 / 栏目 H2 / 每栏表格 + 可点击 link / 发·接分开 / 砍掉清单带原因）。
-- 详见判官 persona。
+[`oracle/score.py`](../oracle/score.py) 只做可验证的机械工作：
 
-## 调优在哪（没有打分配置文件了）
-- 想调**硬剔除/软提示** → 改 `config/pillars.yml`（exclude / keywords）。
-- 想调**判官口径**（关系/frame/否决问松紧） → 改 `personas/选题judge-X.md`。
-- 依据 = **X 后台真实互动率**（reply/repost/收藏/完读）：模型评的是"互动倾向"不是"文案质量"，用真实数据校准口径，不凭感觉。
+- 应用 `pillars.yml` 硬排除。
+- exact 跨日去重 45 天，story 跨日去重 14 天。
+- 计算 enrichment 排序提示；X 权重最高，但不设平台配额。
+- 记录账号多日出现、Recall/Evidence outcome，维护动态 X 候选池。
 
-相关：`02-内容栏目.md`、`04-算法纪律.md`、`personas/选题judge-X.md`、`oracle/score.py`
+动态账号晋级需要至少两天出现且至少两次通过 Evidence Judge；竞品账号永不自动晋级。SQLite 位于仓库外。
+
+## 3. Recall Judge：保召回
+
+Recall Judge 按 60 条分批全量判断哪些候选值得进一步读取，随后合并校验。它允许同时给原创与互动 action，但不做最终事实结论。每个 candidate 必须且只能得到一次：
+
+- `keep_for_enrichment`
+- `interaction_only`
+- `watch_only`
+- `reject`
+
+验证器会检查漏判、重复 ID、未知 ID 与跨平台 action。最多 32 条按机械 priority 进入 enrichment。
+
+## 4. deterministic enrichment
+
+- X：用 safe-social 读取原 tweet 结构与上下文。
+- Reddit：用 safe-social 读取原帖与讨论结构。
+- RSS / News / web：读取链接所指向页面。
+
+enrichment 失败会显式记录 `error`，不会被伪装成已验证。
+
+## 5. Evidence Judge：终审
+
+Evidence Judge 必须逐条输出：source says、why now、why Apodex、possible angle、inference boundary、needs verification，以及合法 column/action。
+
+每个 enriched candidate 必须且只能得到一次 `keep`、`interaction`、`watch` 或 `reject`。终审输出统一是 `Idea`，不会越级成成稿。
+
+最终报告把原创栏目、X 互动、Reddit 互动、watch 与淘汰清单分开。同一候选若同时具有原创和互动价值，会出现在两个对应区域。

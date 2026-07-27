@@ -63,13 +63,13 @@ when_to_use: 一条 X 成稿(thread/post/quote)要发之前；"帮我打分/这�
 **3. 深互动钩** — 能引发 reply / quote / bookmark 至少一种吗？(深互动权重 > 点赞)
 - 0：纯陈述无钩。1：只可能拿赞。2：有可争的断言 / 可判的陷阱 / 可收藏的参考 / 可截图的金句。
 
-**4. 身份 · 栏目 · ICP** — ladder 回主线吗？(AI for science labs + deeptech，verification 内核)
-- 0：挂不进主线 / 领域漂移（Phoenix 学乱）。1：勉强沾边。2：清晰属某栏目(①-⑤) + 打得出 ICP 标签(A4Science/A4DeepTech)。
+**4. 身份 · 栏目 · ICP** — ladder 回研究实验室与科研团队的 evidence、decision、verification 主线吗？
+- 0：挂不进主线 / 领域漂移。1：勉强沾边。2：清晰属于当前栏目 + 对 Apodex4Science 有具体价值。
 
 **5. verification 内核落地** — 落到 verify>generate / discovery，还是写成了普通 AI tool？
 - 0：普通 tool 腔 / 只吹"benchmark win" / 当又一个 chatbot。2：verification / discovery 叙事站得住。
 
-**6. 英文 + ICP 匹配** — 英文？AI-science / deeptech ICP 真会在乎？
+**6. 英文 + ICP 匹配** — 英文？研究实验室与科研团队真会在乎？
 - 0：中文 / 跑题。1：英文但话题偏泛。2：英文 + 正中 ICP 关切。
 
 **7. 红线 + anti-slop** — 碰 RULES 红线或 AI 营销腔了吗？

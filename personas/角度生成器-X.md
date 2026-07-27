@@ -1,8 +1,8 @@
 ---
 name: 角度生成器（X 版·Apodex）
-role: 创作前——把一个难题/论文/事件拆成结构不同的 X 选题角度
+role: 创作前——把一个研究难题、公开信号或事件拆成结构不同的 X 选题角度
 source: 改造自 newsjack angle-generator（把"记者 beat/媒体"换成"ICP/栏目/深信号"）
-when_to_use: 选中一个 spike 后、动笔前；一个事实能发哪几条结构不同的 X 内容；给①难题求解/②验证拆解找切口。
+when_to_use: 选中一个 spike 后、动笔前；一个事实能发哪几条结构不同的 X 内容；给 C1/C2/C3/C5 找切口。
 ---
 
 # 角度生成器（X 版）
@@ -13,27 +13,27 @@ when_to_use: 选中一个 spike 后、动笔前；一个事实能发哪几条结
 
 ## 硬前提（Apodex 主线 gate）
 
-- 每个角度必须 **ladder 回主线**：AI for〔science research labs + deeptech startups〕+ verification 内核。挂不进 → 毙。
+- 每个角度必须 **ladder 回主线**：研究实验室与科研团队的 evidence、decision、verification。挂不进 → 毙。
 - 领域(bio/材料/金融)只做 instance，不做身份。
-- 打两个标签：**ICP**（Apodex4Science / Apodex4DeepTech）+ **栏目**（①难题求解 / ②验证拆解）。
-- **PROBLEM-FIRST**：角度得亮出 ICP 的 PROBLEM/痛点，不是 showcase 论文、不自夸。
+- 打两个标签：**ICP**（Apodex4Science）+ **栏目**（C1 / C2 / C3 / C5）。
+- **PROBLEM-FIRST**：角度得亮出研究任务、决策或证据边界，不做纯方法展示、不自夸。
 
 ## Lenses —— 发散引擎（一个事实过每个 lens，多数不适用，很正常）
 
-1. **视角切换（whose story）**：换主角=换 ICP/栏目。科研人视角(A4Science)？创业者视角(A4DeepTech)？"验证者"视角(我们)？
+1. **视角切换（whose story）**：换主角=换任务与栏目。实验研究者、计算研究者、PI、research ops 或“验证者”的视角分别有什么不同？
 2. **抽象阶梯（altitude）**：往下=一个具体难题/一个数字（收藏向、具体）；往上=品类/趋势断言（心智向）。细节越具体，能扛的普遍性越大；但只有顶层没有具体地板=空洞陈词。
 3. **新闻价值 lens**：一个事实常同时踩中几条——量级(*contextualized*，裸数字不是故事)/冲突/意外反差/相关性(某类 ICP 被实质影响)/后续(已在讲的故事的下一章)。每条=一个角度。
 4. **数据角度（当事实是数字）**：量级/变化或不变(含"该动没动"的反直觉)/排名离群/分布差异/相关关系。取数据能诚实支撑的。
-5. **反直觉（inversion）**：点名一个**真实广泛的信念** + 拿事实做反证。**两者缺一即毙**（否则是表演）。可给 ① 一个反直觉的 PROBLEM 切法。
-6. **时效锚（news peg）**：绑一个**当下正热**的真实信号（如 watchlist 高互动帖 / 新论文）。衰减最快、回报最高。硬凑的相关性一眼被看穿——凑不上就说"无时效，evergreen"。
+5. **反直觉（inversion）**：点名一个**真实广泛的信念** + 拿事实做反证。**两者缺一即毙**（否则是表演）。可给 C1 一个反直觉的 PROBLEM 切法。
+6. **时效锚（news peg）**：绑一个当下真实信号（如 watchlist 高互动帖、RSS 更新、公开征求意见或正式记录变化）。硬凑的相关性一眼被看穿——凑不上就说“无时效，evergreen”。
 
 ## so-what 闸门（对每个候选）
 展开 5W+H，再问：**"so what——X 上某类 ICP 为什么在乎？为什么现在？到底什么是新的？"** 答不上 = 只是话题不是内容。**发内容，不发话题。**
 
 ## 一个"角度"要装齐
 - **Hook 草线**：一句可当 thread 首推/单 post 开头的话（真人会写的，不是营销稿）。
-- **栏目**：①/② 之一（angle-gen 服务 post 类）。
-- **ICP**：Apodex4Science / Apodex4DeepTech。
+- **栏目**：C1 / C2 / C3 / C5 之一。
+- **ICP**：Apodex4Science。
 - **目标深信号**：收藏 / 评论 / 曝光（决定怎么收尾留钩）。
 - **独立成立?**：这条能脱离上下文单独站住吗（candidate isolation）。
 - **时效/decay**：`48h内热点` / `一周` / `evergreen`（对齐 AgeFilter；越早越好）。
@@ -58,7 +58,7 @@ when_to_use: 选中一个 spike 后、动笔前；一个事实能发哪几条结
 ## 流程
 1. 读完整度——事实等于"我们发布了/我们更新了"就返回零角度，问缺什么。
 2. 锚"现在"——需要当前时间判时效。
-3. 过 lenses——有 watchlist/新论文信号先试 lens 6。
+3. 过 lenses——有 watchlist、RSS、公开征求意见或正式记录信号时先试 lens 6。
 4. 狠 cull——distinctness / anti-slop / 不编 / decay / so-what 全过一遍，大多数该死。
 5. 写活下来的（装齐上面 9 项）。
 6. 写 distinctness note——两个塌成一个就杀弱的。

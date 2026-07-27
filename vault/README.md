@@ -1,8 +1,9 @@
-# vault — 选题库
+# vault — 运行产物
 
-每次 run_oracle 产出两份：
-- **`YYYY-MM-DD.md`**（score.py 预筛）：`📥 送判官候选`（去重+去硬垃圾的全量）+ `🗑️ 硬剔除`（带原因）。
-- **`YYYY-MM-DD-judged.md`**（判官）：`✅ 判官保留`（按栏目分表、发/接分开、带 link）+ `✂️ 判官砍掉`（带否决原因）。← 你看这份挑。
+每次 `run_oracle.sh` 生成：
 
-- `.raw-*.json` / `.judge-*.log` 是中间产物，可删。
-- 判官保留的候选 → `personas/角度生成器-X` 切角度 → 起草（见根 README Phase 5）。
+- `YYYY-MM-DD.md`：deterministic prefilter 的 Recall 输入概览与硬排除。
+- `YYYY-MM-DD-judged.md`：Evidence Judge 终审报告；原创栏目、X 互动、Reddit 互动、watch 与淘汰分开。
+- `.raw-*`、`.recall-*`、`.enriched-*`、`.evidence-*`、`.judge-*`：可审计中间产物。
+
+整个 `vault/` 除本说明与 `.gitkeep` 外都被 gitignore，不会提交外部采集内容或 Judge 结果。

@@ -1,148 +1,109 @@
-# 内容栏目定义（身份锚）—— 详见 docs/02-内容栏目.md
-# 🔑 PROBLEM-FIRST（2026-07-24）：找的是 ICP 的 PROBLEM/痛点/共鸣，不是 showcase 论文、不自夸、不夸人踩竞品。
-# 2026-07-24 后 keywords 只是给 score.py 的软提示(col_hint)，不再当生杀 gate；真正分类=判官语义(见 personas/选题judge-X.md)。
-# scrapable: 是否由 collect 外部采集喂。③世界观(搬blog)/⑤UGC(供料) 非采集。
+# Science-track 内容栏目、领域、研究任务与动作定义。
+# 栏目回答“讲什么”，action 回答“在哪里做什么”；source 不再强制决定栏目。
 
 columns:
   C1:
-    name: 难题求解 (Hard-problem solving·主池)
+    name: Problem-aware｜难题求解
     scrapable: true
     target_signal: [心智, 收藏, 曝光]
-    # 2026-07-24 去 AI 化：删 deep research/ai scientist/self-improving 等 AI 词，换领域+预测词
-    #   ① = 领域预测题(pharma/临床/政策/市场/技术)，不是"AI 又错哪了"(那归 C2)
-    keywords:
-      - clinical trial
-      - effect size
-      - endpoint
-      - phase 3
-      - readout
-      - translational
-      - causal target
-      - replication
-      - drug discovery
-      - protein
-      - material
-      - chemistry
-      - clinical
-      - forecast
-      - prediction
-      - probability
-      - scenario
-      - regulatory
-      - pipeline
-      - unsolved
-      - open problem
+    keywords: [open problem, hard problem, experimental design, next experiment, uncertainty, conflicting evidence, decision]
 
   C2:
-    name: 验证拆解/反AI幻觉 (Verification teardown)
+    name: Product-aware｜验证拆解 / 反 AI 幻觉
     scrapable: true
     target_signal: [收藏, 评论]
-    # ⚠️ 反的是"AI 自信给错/编造(hallucination)造成真实代价、verification 抓住它"，
-    #    不是"AI 能力弱/benchmark 得分低/AI 干不好"(那是反 AI 能力，自戳)。
-    #    锚案例：陷阱题→模型 over-claim/编造；法官罚假判例；假 citation/wrong dosage。
-    keywords:
-      - hallucination
-      - hallucinated
-      - fabricat
-      - made-up
-      - false conclusion
-      - fake citation
-      - wrong citation
-      - confidently wrong
-      - over-claim
-      - misleading knowledge
-      - unfaithful
-      - unverified claim
-      - contamination
-      - cheat on
-      - benchmark cheat
-      - answer key
-      - verification gate
-      - evidence chain
+    keywords: [unsupported conclusion, evidence mismatch, source mismatch, wrong result, overclaim, verification gap, missing evidence]
 
   C3:
-    name: 世界观 (Worldview·底色)
-    scrapable: false
-    note: discovery≠generative；从老板 blog 搬现成，不外部采集
+    name: Before It Becomes Official｜定稿之前
+    scrapable: true
+    target_signal: [心智, 收藏]
+    keywords: [draft, consultation, request for comment, open funding, proposed standard, evidence gap, research recommendation]
 
   C4:
-    name: 圈内接话 (Deep-interaction on others)
-    scrapable: true
-    source: watchlist         # collect.py 给 pillar_hint = C4
-    target_signal: [曝光, profile_click]
-    # ⚠️ 找的是：(a)共鸣——同哲学的帖→顺势自陈；(b)痛点——有人吐槽我们能解的痛→荐己。
-    #    别找夸奖帖、别踩竞品(含垂类)。见 docs/02 ④。
+    name: Worldview｜Big Idea 世界观
+    scrapable: false
+    note: 内部物料仅由 Selene 提供；repo 不保存内部内容。
 
   C5:
-    name: ApodexSolvers/SolversOfWeek (UGC)
+    name: Claim vs Record｜公开说法 vs 正式记录
+    scrapable: true
+    target_signal: [收藏, 评论]
+    keywords: [official record, registry, stated endpoint, disclosed result, updated status, public claim]
+
+  C6:
+    name: Social Proof｜#ApodexSolvers
     scrapable: false
-    note: Selene 供料，不采集
+    note: 内部 UGC 仅由 Selene 提供并确认公开范围。
 
-# 两大 ICP 内容分类命名（走 hashtag+系列名）—— score.py 给每条候选打 ICP 标签
-icp:
-  Apodex4Science:
-    keywords: [research lab, scientist, protein, genomic, biology, biomedical, material, chemistry, physics, clinical, drug, academic, paper, arxiv, experiment, molecul]
-  Apodex4DeepTech:
-    keywords: [startup, founder, market, competitive, regulatory, policy, supply chain, geopolit, investment, funding, roadmap, go-to-market, strategy, product, enterprise]
+  C8:
+    name: Engagement｜圈内接话
+    scrapable: true
+    target_signal: [曝光, profile_click]
+    note: 展示层栏目；底层 action 仍拆成 X reply、X quote、Reddit reply 和原创选题。
 
-# 明确排除，不进主号原创选题池（详见 docs/02）
+domains:
+  life_sciences:
+    keywords: [biology, biomedical, neuroscience, genomic, genetics, protein, cell, assay, clinical, drug, therapeutic]
+  chemistry_materials_energy:
+    keywords: [chemistry, chemical, catalyst, materials, battery, energy, synthesis, molecule]
+  scientific_computing:
+    keywords: [scientific computing, simulation, analysis pipeline, dataset, statistics, model, database, software]
+  physics_earth_space:
+    keywords: [physics, astronomy, climate, earth science, geoscience, measurement, observatory]
+  engineering_robotics:
+    keywords: [engineering, robotics, autonomous lab, instrument, control system, hardware]
+
+research_tasks:
+  hypothesis_formation:
+    keywords: [hypothesis, mechanism, causal, explanation]
+  experiment_design:
+    keywords: [experimental design, next experiment, assay, protocol, control group, endpoint]
+  evidence_conflict:
+    keywords: [conflicting evidence, conflicting results, discrepancy, inconsistent, disagreement]
+  data_tool_integration:
+    keywords: [pipeline, database, tool, dataset, integration, workflow]
+  ambiguous_result:
+    keywords: [unexpected result, failed experiment, ambiguous, troubleshooting, not working]
+  next_best_action:
+    keywords: [next step, prioritize, which method, what would you do, decision]
+  scope_boundary:
+    keywords: [limitation, boundary, generalize, uncertainty, confidence]
+  expert_calibration:
+    keywords: [expert judgment, calibration, review criteria, decision rule]
+
+actions:
+  original_post:
+    platforms: [x, reddit, rss, web]
+  x_reply:
+    platforms: [x]
+  x_quote:
+    platforms: [x]
+  reddit_reply:
+    platforms: [reddit]
+  watch_only:
+    platforms: [x, reddit, rss, web]
+
+audience:
+  name: Apodex4Science
+  keywords: [research lab, scientist, investigator, laboratory, experiment, scientific, biology, chemistry, materials, physics, clinical]
+
 exclude:
-  - name: 预测结果/世界杯/体育
-    reason: 结果预测归官网+blog；主号只做"预测科学/预测难题求解"，不给结果
-    keywords: [world cup, who will win, betting odds, polymarket price, football, soccer, match result, sports bet]
+  - name: 学术诚信与出版争议
+    reason: 当前科学内容线不做诚信审判、撤稿追踪、作者争议或出版流程戏剧。
+    keywords: [academic integrity, research misconduct, plagiarism, fabricated citation, fake citation, retraction, peer review drama, reviewer dispute, publication ethics, image manipulation, authorship dispute]
   - name: 中文内容
-    reason: 主号纯英文；中文另走独立渠道
-    rule: lang != "en" 即排除主号
-  - name: 噪音(个人生活/寒暄/直播promo)
-    reason: 非选题价值——个人生活、寒暄、直播/活动吆喝
-    keywords: [painting, morning run, offsite, "come join", "we are now live", "launch stream", "join us", "join the", giveaway, lmao, "just like me", "happy birthday", "good morning", "we are live", "come build", "tune in"]
-  - name: 竞品自吹/产品launch/骂战
-    reason: 竞品 launch 不硬蹭、衰败/骂战不站队(RULES)；别人自吹产品不是我们的选题
-    keywords: [despise, "don't be like", misanthropic, "announcing ", "we just shipped", "our team just shipped", "excited to launch", "excited to announce", "now live on", "proud to", "check it out"]
-  - name: 反AI能力(frame错)
-    reason: 反 AI 能力(AI 弱/得分低/干不好)——我们自己就是 AI，不做此 frame；C2 只做反幻觉
-    keywords: ["humans hit", "humans score", "far below human", "ai still cannot", "ai fails at", "models struggle"]
-  - name: 法律AI幻觉判例(已写过)
-    reason: AI 幻觉法律判例/法院 sanction Selene 已写过，别再当选题（2026-07-24）
-    keywords: ["sanctioned", "fabricated citation", "fake citation", "law firm", "court fined", "bar association", "legal brief", "hallucinated case"]
-
-  - name: 职业/择校/学位/入门/会议行政(Reddit 噪音)
-    reason: >
-      Reddit 从业者版混大量非技术噪音——找工作/读研择校/学位/教材入门/会议投稿行政八卦，
-      全不是 ICP 技术痛点。用组合词精准拦(避免裸 review/confidence/learn/graduates 误伤真痛点)。2026-07-24 C。
-    keywords:
-      # 职业 / 择校 / 学位
-      - break into
-      - job prospects
-      - job opportunities
-      - job market
-      - career
-      - universities for
-      - grad school
-      - graduate school
-      - hiring managers
-      # 教材 / 入门 / 学习路径
-      - for beginner
-      - beginner level
-      - self-studying
-      - self study
-      - getting back into
-      - project ideas
-      - should i implement
-      - papers to implement
-      - want to learn
-      - need guidance
-      - practice problems
-      # 会议投稿行政 / 八卦（MachineLearning 版重灾区）
-      - openreview
-      - rebuttal
-      - meta review
-      - reviews are out
-      - reviews come out
-      - reviews just released
-      - refresh day
-      - paper reviews
-      - neurips review
-      - acm mm
-      - average rating
-      - average confidence
+    reason: 主号纯英文；中文另走独立渠道。
+    rule: lang != "en"
+  - name: 体育与博彩结果
+    reason: 不属于科学研究方向。
+    keywords: [world cup, who will win, betting odds, football, soccer, sports bet]
+  - name: 个人生活与活动吆喝
+    reason: 没有科研选题或专业互动价值。
+    keywords: [morning run, happy birthday, good morning, giveaway, we are live, tune in, come join]
+  - name: 竞品自吹与骂战
+    reason: 不硬蹭 launch，不参与衰败叙事或互撕。
+    keywords: [we just shipped, excited to launch, excited to announce, proud to announce, don't be like, despise]
+  - name: 求职择校与会议行政
+    reason: 不是科研决策问题。
+    keywords: [job market, career advice, grad school, graduate school, universities for, hiring managers, conference deadline, reviews are out, rebuttal deadline]

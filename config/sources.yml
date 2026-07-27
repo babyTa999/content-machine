@@ -1,122 +1,146 @@
-# 采集源配置 —— 本文件真正驱动 collect.py（2026-07-24 A 方案：配置化）
-# collect.py 读每个源的 status + 参数。status: auto 才采；staged/off 跳过（真跳过，不是文档）。
-# 改这里 = 改采集行为。解析逻辑（RSS/Jina/arXiv XML）仍在 python，不在这。
-# method 仅标注用途；驱动靠 status + 下面的参数。
+# Oracle 外部母库配置（science track）
+# status: auto 才采集；staged 只占位；manual 由 Selene 供料且不进入 repo。
 
-# ========== ① 难题求解：ICP 真实硬难题 ==========
+state:
+  cross_day_dedupe_days: 45
+  story_dedupe_days: 14
+  dynamic_watch_limit: 20
 
-practitioner_pain_reddit:            # 从业者直接问痛（safe-social 只读）
-  method: safe-social reddit search  # ⚠️safe-social 封了 sub 命令→改 search "subreddit:X <痛点词>"
+recall:
+  source_priority:
+    x: 6
+    reddit: 4
+    rss: 2
+    web: 1
+  max_enrichment_candidates: 32
+
+enrichment:
+  x_method: safe-social x tweet
+  reddit_method: safe-social reddit read
+  web_method: jina reader
+  max_chars: 12000
+
+# X 四路并行：静态 watchlist、任务型 Top+Latest、对话图、动态账号池。
+x_watchlist:
+  method: safe-social x user-posts
   status: auto
-  sort: top                          # 拉高赞经典，不看"最近谁发帖"的运气
-  time: year                         # 痛点常青，取一年内高赞真金
-  limit_per_query: 12
-  pain_query: '(help OR error OR problem OR "how do I" OR verify OR reproducibility OR broken OR wrong)'
-  subs:                              # 分 ICP 组——采集给帖子带 icp（比关键词准）
-    Apodex4Science: [bioinformatics, computationalbiology, chemistry, statistics]
-    Apodex4DeepTech: [MLQuestions, datascience, MachineLearning]
-  note: 只取有 S.O.S./Help/[Q]/[R] 求助文化的技术版；已砍 labrats/AskAcademia/biotech/PhD/LocalLLaMA/MaterialsScience。
+  posts_per_handle: 12
+  window_h_individual: 72
+  window_h_institution: 168
+  request_interval_s: 1.2
 
-arxiv:                               # 收窄(2026-07-24 B)：只留"AI 失败/不可靠"研究——arxiv 唯一喂得动②的东西
-  method: curl                       # 方法/成果论文 4 组 query 全删(judge Q0 本就全砍、纯拖慢+限流)
+x_keyword_search:
+  method: safe-social x search
   status: auto
+  lang: en
+  exclude: [retweets]
+  request_interval_s: 2.0
+  modes:
+    Top:
+      per_query: 10
+      window_h: 336
+      min_engagement: 5
+    Latest:
+      per_query: 14
+      window_h: 96
+      min_engagement: 0
+  queries:
+    research_decisions:
+      - '"next experiment" (biology OR chemistry OR materials OR neuroscience)'
+      - '"experimental design" (lab OR scientist OR research)'
+      - '"which method" (assay OR protocol OR experiment OR analysis)'
+    evidence_conflicts:
+      - '"conflicting results" (experiment OR dataset OR assay)'
+      - '"unexpected result" (lab OR experiment OR analysis)'
+      - '"data discrepancy" (research OR experiment OR analysis)'
+    workflow_friction:
+      - '"research workflow" (tool OR database OR pipeline)'
+      - '"analysis pipeline" (stuck OR error OR unexpected)'
+      - '"failed experiment" (help OR why OR troubleshooting)'
+    science_signals:
+      - '"AI for science" (experiment OR lab OR discovery)'
+      - '"scientific reasoning" (evaluation OR evidence OR experiment)'
+      - '"new dataset" (biology OR chemistry OR materials OR physics)'
+
+x_conversation_graph:
+  method: safe-social x search --to
+  status: auto
+  mode: Latest
+  handles_per_run: 8
+  per_handle: 12
+  window_h: 72
+  min_engagement: 1
+  request_interval_s: 2.0
+  note: 每天轮换 watchlist seed，读取回复者与 quote chain；只扩大召回，不自动互动。
+
+x_dynamic_watch:
+  method: safe-social x user-posts
+  status: auto
+  posts_per_handle: 10
   window_h: 168
-  max_results: 12
-  queries:                           # 只抓揭示 LLM/agent 失败模式/不可靠/局限的研究，非"提出新方法"的 showcase
-    ai-failure-modes: '(cat:cs.AI OR cat:cs.CL OR cat:cs.LG) AND (abs:hallucination OR abs:unreliable OR abs:"fails to" OR abs:overconfident OR abs:"not robust" OR abs:brittle OR abs:"silently wrong") AND (abs:LLM OR abs:"language model" OR abs:agent OR abs:"deep research")'
+  request_interval_s: 1.2
+  note: 账号来自 repo 外 SQLite；只有多日稳定命中并经 Evidence Judge 留下的账号才晋级。
 
-prediction_banks:                    # Metaculus 预测题（含预测切面 7+5 类）
-  method: jina                       # REST API 已 403(2026-07)→Jina 抓搜索页 #### [title](url)
+# Reddit 同时取高质量常青讨论和近期讨论；既可做回复，也可做原创选题 seed。
+reddit_discovery:
+  method: safe-social reddit search
   status: auto
-  url: 'https://www.metaculus.com/questions/?order_by=-activity&status=open&search=AI+science+drug+protein+climate+biology'
-  note: SSPP(DellaVigna 1482 题) / FDA PDUFA 日历待接。
+  request_interval_s: 1.5
+  modes:
+    - {sort: top, time: year, limit: 12}
+    - {sort: new, time: month, limit: 12}
+  query_rotation_per_sub: 1
+  queries:
+    - '(help OR "how do" OR "which method" OR "what would you do" OR "next experiment")'
+    - '(protocol OR assay OR pipeline OR analysis OR dataset) (issue OR discrepancy OR unexpected OR stuck)'
+    - '(experiment OR simulation OR measurement) (failed OR confusing OR conflicting OR troubleshooting)'
+  communities:
+    life_sciences: [bioinformatics, computationalbiology, labrats, neuroscience, genetics, biotech]
+    chemistry_materials: [chemistry, MaterialsScience]
+    scientific_computing: [statistics, datascience, MachineLearning]
 
-official_challenges:                 # 官方悬赏 = ICP 的痛，明写
-  method: jina                       # Jina 抓页链接 + 路径过滤
+# RSS/News 只是及时线索；“新发布”本身没有选题价值。
+science_rss:
+  method: rss
+  status: auto
+  limit_per_feed: 18
+  feeds:
+    Nature: https://www.nature.com/nature.rss
+    Science: https://www.science.org/rss/news_current.xml
+
+science_news:
+  method: google_news_rss
+  status: auto
+  per_query: 6
+  queries:
+    - scientific research experimental design data challenge
+    - research lab workflow dataset tool problem
+    - biology chemistry materials experiment unexpected result
+    - scientific AI laboratory decision evidence
+
+prediction_banks:
+  method: jina
+  status: auto
+  url: 'https://www.metaculus.com/questions/?order_by=-activity&status=open&search=science+drug+protein+climate+biology+materials'
+
+official_challenges:
+  method: jina
   status: auto
   pages:
     USAgov: https://www.usa.gov/find-active-challenge
     XPRIZE: https://www.xprize.org/prizes
     ARPA-H: https://arpa-h.gov/research-and-funding
-  note: 路径过滤(usa.gov /challenges/·xprize /competitions/·arpa-h /programs|open-funding；跳图片)硬编码在 collect；NSF/DARPA 后续加页面。
 
-domain_news:                         # ① 领域源——喂 pharma/临床/政策/市场/技术 的公开发展 → 判官按 A/B/C 框成预测题
-  method: google_news_rss
+hackernews:
+  method: api
   status: auto
-  per_query: 6
-  # ⚠️ 老板 7 类(市场竞争/政策监管/pharma clinical/技术趋势/供应链地缘/战略情景/投资概率)，生物加重
-  # 判官把'发生了啥'框成'围绕它的开放预测题'(A/B/C)，一个 prompt+公开证据可跑；不吃私有数据
-  queries:
-    - GLP-1 cardiovascular renal outcomes trial
-    - SGLT2 GLP-1 combination clinical evidence
-    - solid tumor CAR-T phase 3 endpoint
-    - anti-amyloid lecanemab donanemab ARIA benefit
-    - AlphaFold protein design limitation dynamics
-    - base editing CRISPR therapy approval
-    - FDA accelerated approval reform confirmatory
-    - BIOSECURE CDMO biomanufacturing supply
-    - orforglipron oral obesity drug market
-    - PDUFA decision drug approval
-  note: 领域词非 AI 词——① 是领域预测题不是"AI 又错哪了"。SSPP/PDUFA/临床 readout 日历后续可加。
-
-# ⛔ review_open_questions 已砍(2026-07-24)：搜 open-question+review 出的是自秀方法论文，非 problem-first。
-
-# ========== ② 验证拆解：AI 在 science/deeptech 闯祸的真实事件 ==========
-
-ai_incident_db:                      # Google News RSS（免费无 key），ICP 镜头
-  method: google_news_rss
-  status: auto
-  per_query: 8
-  queries:                           # ⚠️ 只锚 science/deeptech；判官 ICP 闸砍客服/消费噪音
-    - AI fabricated research data retraction
-    - AI hallucinated citation scientific paper
-    - deep research AI unreliable wrong conclusion
-    - AI benchmark data leakage flawed evaluation
-    - AI drug discovery materials prediction wrong
-  note: s.jina.ai/Exa 已需 key（2026-07）；Google News RSS 免费替代。X 带截图翻车后续接。
-
-journal_rss:                         # bio/science 新闻 + 撤稿（含 Retraction Watch）
-  method: rss
-  status: auto
-  limit_per_feed: 15
-  feeds:
-    Nature: https://www.nature.com/nature.rss
-    NatureComms: https://www.nature.com/ncomms.rss
-    Science: https://www.science.org/rss/news_current.xml
-    RetractionWatch: https://retractionwatch.com/feed/
-
-# ⛔ 法律 AI 幻觉判例(Charlotin) —— Selene 已写过；pillars exclude + 判官双拦，不采。
-
-# ========== ④ 圈内接话（只 X）==========
-
-x_watchlist:                         # 个人 + 机构官号，见 watchlist.yml
-  method: safe-social x
-  status: auto
-  posts_per_handle: 10
-  window_h_individual: 48            # 接话要鲜
-  window_h_institution: 168          # 机构官号当选题素材
-  note: (a)共鸣顺势自陈 / (b)痛点荐己，不夸不踩。
-
-x_keyword_search:                    # 捞非 watchlist 的生人真实抱怨/争论/翻车 → 判官判①(原创难题)或④(接话)
-  method: safe-social x search
-  status: auto
-  per_query: 6
-  window_h: 336                      # 14 天宽窗；接话鲜度由判官判（痛点常青）
-  min_engagement: 5                  # 过滤零互动噪音（生人搜索噪音多）
-  queries:
-    resonance: ["verification matters", "cannot trust AI output", "reproducibility crisis", "AI confidently wrong"]
-    pain: ["AI hallucinated a citation", "how do I verify AI", "AI made up a number", "spent hours verifying AI"]
-  note: ⚠️@kw90qk 只读、拉开间隔别连甩(限流)、别用 macOS 无的 timeout。monid(B $0.0006/条不碰号)备选。
-
-# ========== 基础源 ==========
-
-hackernews:                          # front_page AI，偶有 incident/痛点
-  method: curl
-  status: auto
-  query: AI
+  query: scientific research tools
   hits: 8
 
-hf_papers:                           # 降权——论文源，judge 不自动留
-  method: curl
-  status: auto
-  limit: 8
+official_records:
+  status: staged
+  note: 官方数据库留待下一次专项讨论后再配置；当前 Judge 不得把新闻线索伪装成正式记录。
+
+owned_materials:
+  status: manual
+  note: 所有内部物料由 Selene 提供；不保存内部路径、原文、截图、数字或产品承诺。
