@@ -397,12 +397,17 @@ def prefilter(args: argparse.Namespace) -> None:
             candidate = dict(original)
             if not candidate.get("candidate_id"):
                 raise SystemExit("Every candidate must have candidate_id")
-            duplicate = previous_duplicate(
-                connection, candidate, seen_date,
-                int(state_cfg.get("cross_day_dedupe_days", 45)),
-                int(state_cfg.get("story_dedupe_days", 14)),
-            )
-            reason = hard_excluded(candidate, pillars) or duplicate
+            # Curated cells carry their own cooldown state (evergreen_usage) and are
+            # not external signals, so neither the topic gate nor cross-day dedupe applies.
+            if candidate.get("object_type") == "curated_cell":
+                reason = None
+            else:
+                duplicate = previous_duplicate(
+                    connection, candidate, seen_date,
+                    int(state_cfg.get("cross_day_dedupe_days", 45)),
+                    int(state_cfg.get("story_dedupe_days", 14)),
+                )
+                reason = hard_excluded(candidate, pillars) or duplicate
             text = " ".join(str(value or "") for value in (candidate.get("title"), candidate.get("text")))
             candidate["problem_shape_hints"] = keyword_hints(
                 text, pillars.get("problem_shapes") or {}
@@ -417,7 +422,8 @@ def prefilter(args: argparse.Namespace) -> None:
             candidate["editorial_intent_hints"] = editorial_intent_hints(candidate, intents)
             candidate["evidence_role"] = evidence_role(candidate, sources)
             candidate["priority_score"] = priority_score(candidate, sources)
-            observe_candidate(connection, candidate, run_id, observed_at, seen_date, competitors)
+            if candidate.get("object_type") != "curated_cell":
+                observe_candidate(connection, candidate, run_id, observed_at, seen_date, competitors)
             if reason:
                 candidate["prefilter_decision"] = "reject"
                 candidate["prefilter_reason"] = reason
@@ -496,7 +502,12 @@ def recall_chunks(args: argparse.Namespace) -> None:
     for pattern in ("input-*.json", "output-*.json"):
         for old in output_dir.glob(pattern):
             old.unlink()
-    candidates = source.get("candidates") or []
+    # Curated cells skip Stage 1: their intent, shape and thesis come from the
+    # library, not from matching an external event. They still face Stage 2.
+    candidates = [
+        item for item in (source.get("candidates") or [])
+        if item.get("object_type") != "curated_cell"
+    ]
     size = max(1, int(args.size))
     chunks = [candidates[index : index + size] for index in range(0, len(candidates), size)] or [[]]
     for index, rows in enumerate(chunks, start=1):
@@ -643,7 +654,15 @@ def validate_axis(row: dict[str, Any], candidate_id: str) -> str:
 
 
 def enforce_form_quota(rows: list[dict[str, Any]], day: str) -> dict[str, dict[str, int]]:
-    """Per-report caps are hard. Weekly caps count the trailing 7 days of state."""
+    """Count form usage and flag over-cap forms as warnings, not hard failures.
+
+    Form choice is editorial style, not correctness — the same philosophy docs/03
+    already applies to axis rotation ("轮换是编辑判断，不是机械规则"). Hard-failing the
+    whole render over one extra mid_post threw away otherwise-legal reports and forced
+    a manual form rebalance (seen 2026-07-29). Over-cap forms now surface loudly in the
+    rotation self-check and on stderr; nothing auto-publishes, so Selene rebalances when
+    writing. Each usage row carries its caps and an `over` flag for the report.
+    """
     configured = load_yaml(REPO / "config" / "forms.yml")
     forms = configured.get("forms") or {}
     per_report: dict[str, int] = {}
@@ -670,17 +689,23 @@ def enforce_form_quota(rows: list[dict[str, Any]], day: str) -> dict[str, dict[s
         report_cap = definition.get("max_per_report")
         week_cap = definition.get("max_per_week")
         week_total = prior.get(form_id, 0) + count
+        over: list[str] = []
         if report_cap is not None and count > int(report_cap):
-            raise SystemExit(
-                f"Form quota exceeded for {form_id}: {count} in one report, cap {report_cap}. "
-                f"Form is decoupled from operator on purpose — vary the form, not the topic."
-            )
+            over.append(f"本期 {count} 条超过每期上限 {report_cap}")
         if week_cap is not None and week_total > int(week_cap):
-            raise SystemExit(
-                f"Weekly form quota exceeded for {form_id}: {week_total} in the trailing "
-                f"7 days, cap {week_cap}."
+            over.append(f"近 7 天 {week_total} 条超过每周上限 {week_cap}")
+        if over:
+            print(
+                f"WARN form quota {form_id}: {'; '.join(over)}（不阻断，请写稿时换形态）",
+                file=sys.stderr,
             )
-        usage[form_id] = {"report": count, "week": week_total}
+        usage[form_id] = {
+            "report": count,
+            "week": week_total,
+            "report_cap": report_cap,
+            "week_cap": week_cap,
+            "over": over,
+        }
     return usage
 
 
@@ -695,6 +720,55 @@ def record_report_forms(day: str, rows: list[dict[str, Any]]) -> None:
                 (day, str(row["candidate_id"]), str(row.get("form") or ""), str(row.get("axis") or ""))
                 for row in rows
                 if row.get("form")
+            ],
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def record_evergreen_usage(
+    day: str, candidates: dict[str, dict[str, Any]], rows: list[dict[str, Any]]
+) -> None:
+    """Burn the cooldown for curated cells that actually reached the report.
+
+    Only a published original counts. A cell that was watched or rejected stays
+    available, otherwise a bad news day would silently consume the library.
+    """
+    used = [
+        (candidates[row["candidate_id"]].get("curated") or {}, row)
+        for row in rows
+        if row["decision"] == "keep"
+        and row.get("primary_action") == "original_post"
+        and candidates.get(row["candidate_id"], {}).get("object_type") == "curated_cell"
+    ]
+    if not used:
+        return
+    connection = state_connection()
+    try:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS evergreen_usage (
+                 entry_id TEXT NOT NULL,
+                 intent_id TEXT NOT NULL,
+                 discipline TEXT NOT NULL,
+                 cell_key TEXT NOT NULL,
+                 used_date TEXT NOT NULL,
+                 outcome TEXT NOT NULL DEFAULT 'queued'
+               )"""
+        )
+        connection.executemany(
+            "INSERT INTO evergreen_usage(entry_id, intent_id, discipline, cell_key, used_date, outcome) "
+            "VALUES(?, ?, ?, ?, ?, 'published')",
+            [
+                (
+                    str(curated.get("entry_id") or ""),
+                    str(curated.get("intent_id") or ""),
+                    str(curated.get("discipline") or ""),
+                    str(curated.get("cell_key") or ""),
+                    day,
+                )
+                for curated, _row in used
+                if curated.get("entry_id")
             ],
         )
         connection.commit()
@@ -767,54 +841,136 @@ def record_outcomes(
         refresh_account_status(connection, platform, handle, competitors)
 
 
-def validate_recall(args: argparse.Namespace) -> None:
-    source = load_json(args.candidates)
-    judged = load_json_loose(args.judged)
-    candidates = {item["candidate_id"]: item for item in source.get("candidates") or []}
-    decisions = decision_map(judged, set(candidates), RECALL_STATES, "Recall")
-    pillars = load_yaml(REPO / "config" / "pillars.yml")
-    valid_columns = {
+def scrapable_columns(pillars: dict[str, Any]) -> set[str]:
+    return {
         column_id
         for column_id, definition in (pillars.get("columns") or {}).items()
         if definition.get("scrapable")
     }
-    normalized: list[dict[str, Any]] = []
+
+
+def recall_decisions_with_curated(
+    source: dict[str, Any], judged: dict[str, Any]
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    """Return (candidates_by_id, decisions_by_id) with curated cells spliced in.
+
+    Curated cells skip Stage 1, so their library decision is injected here rather
+    than judged. Shared by both validate-recall and scan-recall so the two can
+    never disagree on what the decision set is.
+    """
+    candidates = {item["candidate_id"]: item for item in source.get("candidates") or []}
+    curated = {
+        candidate_id: item
+        for candidate_id, item in candidates.items()
+        if item.get("object_type") == "curated_cell"
+    }
+    decisions = decision_map(judged, set(candidates) - set(curated), RECALL_STATES, "Recall")
+    for candidate_id, item in curated.items():
+        decision = ((item.get("curated") or {}).get("decision")) or {}
+        if not decision:
+            raise SystemExit(f"Curated cell lacks a library decision: {candidate_id}")
+        decisions[candidate_id] = {**decision, "candidate_id": candidate_id}
+    return candidates, decisions
+
+
+def normalize_recall_row(
+    candidate: dict[str, Any],
+    row: dict[str, Any],
+    pillars: dict[str, Any],
+    valid_columns: set[str],
+) -> dict[str, Any]:
+    """Apply every recall gate to one decision, raising SystemExit on any violation.
+
+    This is the single source of truth for what makes a recall row legal. Both the
+    fail-closed validator and the non-raising scanner call it, so they cannot drift.
+    """
+    candidate_id = candidate["candidate_id"]
+    cleaned = dict(row)
+    cleaned["candidate_id"] = candidate_id
+    primary_action = row.get("primary_action")
+    if cleaned["decision"] in {"keep_for_enrichment", "interaction_only"}:
+        cleaned["primary_action"] = allowed_primary_action(candidate, primary_action)
+    else:
+        cleaned["primary_action"] = "watch"
+    if cleaned["decision"] == "interaction_only" and cleaned["primary_action"] not in {
+        "x_reply", "x_quote", "reddit_reply"
+    }:
+        raise SystemExit(
+            f"Recall interaction_only requires one platform-valid interaction action: {candidate_id}"
+        )
+    if cleaned["decision"] == "keep_for_enrichment":
+        if cleaned["primary_action"] != "original_post":
+            raise SystemExit(f"Recall original candidate must choose original_post: {candidate_id}")
+        likely_column = str(row.get("likely_column") or "")
+        if likely_column not in valid_columns:
+            raise SystemExit(f"Recall invalid likely_column for {candidate_id}: {likely_column}")
+        problem_shape_id, thesis_id = validate_theme_match(
+            row, pillars, candidate_id, likely_column
+        )
+        cleaned["likely_column"] = likely_column
+        cleaned["problem_shape_id"] = problem_shape_id
+        cleaned["thesis_id"] = thesis_id
+        backing = str(row.get("capability_backing") or "")
+        if backing not in set(pillars.get("capability_backing") or []):
+            raise SystemExit(f"Recall missing capability_backing for {candidate_id}")
+        cleaned["capability_backing"] = backing
+        cleaned["editorial_intent_id"] = validate_editorial_intent(
+            row, candidate_id, problem_shape_id, thesis_id, likely_column, backing
+        )
+        cleaned["event_match_reason"] = str(row.get("event_match_reason") or "")
+    return cleaned
+
+
+def scan_recall(args: argparse.Namespace) -> None:
+    """Collect every recall violation without dying on the first one.
+
+    Curated cells are skipped: their decision is deterministic, so a violation there
+    is a config bug, not a judge miss, and must not be sent back for re-judging.
+    Writes {"illegal": [{candidate_id, reason}], "ok": bool} for the repair loop.
+    """
+    source = load_json(args.candidates)
+    judged = load_json_loose(args.judged)
+    candidates, decisions = recall_decisions_with_curated(source, judged)
+    pillars = load_yaml(REPO / "config" / "pillars.yml")
+    valid_columns = scrapable_columns(pillars)
+    illegal: list[dict[str, str]] = []
     for candidate_id, row in decisions.items():
-        candidate = candidates[candidate_id]
-        cleaned = dict(row)
-        cleaned["candidate_id"] = candidate_id
-        primary_action = row.get("primary_action")
-        if cleaned["decision"] in {"keep_for_enrichment", "interaction_only"}:
-            cleaned["primary_action"] = allowed_primary_action(candidate, primary_action)
-        else:
-            cleaned["primary_action"] = "watch"
-        if cleaned["decision"] == "interaction_only" and cleaned["primary_action"] not in {
-            "x_reply", "x_quote", "reddit_reply"
-        }:
-            raise SystemExit(
-                f"Recall interaction_only requires one platform-valid interaction action: {candidate_id}"
-            )
-        if cleaned["decision"] == "keep_for_enrichment":
-            if cleaned["primary_action"] != "original_post":
-                raise SystemExit(f"Recall original candidate must choose original_post: {candidate_id}")
-            likely_column = str(row.get("likely_column") or "")
-            if likely_column not in valid_columns:
-                raise SystemExit(f"Recall invalid likely_column for {candidate_id}: {likely_column}")
-            problem_shape_id, thesis_id = validate_theme_match(
-                row, pillars, candidate_id, likely_column
-            )
-            cleaned["likely_column"] = likely_column
-            cleaned["problem_shape_id"] = problem_shape_id
-            cleaned["thesis_id"] = thesis_id
-            backing = str(row.get("capability_backing") or "")
-            if backing not in set(pillars.get("capability_backing") or []):
-                raise SystemExit(f"Recall missing capability_backing for {candidate_id}")
-            cleaned["capability_backing"] = backing
-            cleaned["editorial_intent_id"] = validate_editorial_intent(
-                row, candidate_id, problem_shape_id, thesis_id, likely_column, backing
-            )
-            cleaned["event_match_reason"] = str(row.get("event_match_reason") or "")
-        normalized.append(cleaned)
+        if candidates[candidate_id].get("object_type") == "curated_cell":
+            continue
+        try:
+            normalize_recall_row(candidates[candidate_id], row, pillars, valid_columns)
+        except SystemExit as exc:
+            illegal.append({"candidate_id": candidate_id, "reason": str(exc)})
+    payload = {"ok": not illegal, "illegal": illegal}
+    if args.out:
+        Path(args.out).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps(payload, ensure_ascii=False))
+
+
+def splice_recall(args: argparse.Namespace) -> None:
+    """Overlay re-judged rows onto a base recall file, keeping one row per candidate."""
+    base = load_json_loose(args.base)
+    patch_rows: dict[str, dict[str, Any]] = {}
+    for path in args.patch:
+        for row in load_json_loose(path).get("decisions") or []:
+            patch_rows[str(row.get("candidate_id"))] = row
+    merged = [patch_rows.get(str(r.get("candidate_id")), r) for r in base.get("decisions") or []]
+    applied = sum(1 for r in merged if str(r.get("candidate_id")) in patch_rows)
+    out = {"stage": base.get("stage", "recall"), "decisions": merged}
+    Path(args.out).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"spliced {applied} repaired row(s) over {len(merged)} decisions -> {args.out}")
+
+
+def validate_recall(args: argparse.Namespace) -> None:
+    source = load_json(args.candidates)
+    judged = load_json_loose(args.judged)
+    candidates, decisions = recall_decisions_with_curated(source, judged)
+    pillars = load_yaml(REPO / "config" / "pillars.yml")
+    valid_columns = scrapable_columns(pillars)
+    normalized: list[dict[str, Any]] = [
+        normalize_recall_row(candidates[candidate_id], row, pillars, valid_columns)
+        for candidate_id, row in decisions.items()
+    ]
     normalized.sort(key=lambda row: (-float(candidates[row["candidate_id"]].get("priority_score") or 0), row["candidate_id"]))
     sources_cfg = load_yaml(REPO / "config" / "sources.yml")
     recall_cfg = sources_cfg.get("recall") or {}
@@ -825,6 +981,8 @@ def validate_recall(args: argparse.Namespace) -> None:
         platform = str(candidate.get("platform") or "")
         path = str(candidate.get("source_path") or "")
         role = evidence_role(candidate, sources_cfg)
+        if candidate.get("object_type") == "curated_cell":
+            return "evergreen"
         if platform == "x":
             return "x"
         if platform == "reddit":
@@ -844,6 +1002,12 @@ def validate_recall(args: argparse.Namespace) -> None:
     budgets = {str(key): int(value) for key, value in (recall_cfg.get("enrichment_budgets") or {}).items()}
     selected: list[dict[str, Any]] = []
     selected_set: set[str] = set()
+    # Evergreen is the floor of the day's output. It is seated before any budget
+    # split so a heavy news day can never crowd out the one guaranteed item.
+    for row in eligible:
+        if source_bucket(candidates[row["candidate_id"]]) == "evergreen":
+            selected.append(row)
+            selected_set.add(row["candidate_id"])
     for bucket, budget in budgets.items():
         matches = [row for row in eligible if source_bucket(candidates[row["candidate_id"]]) == bucket]
         for row in matches[: max(0, budget)]:
@@ -897,11 +1061,42 @@ def validate_recall(args: argparse.Namespace) -> None:
     print(f"recall validated -> queued {len(selected)} / {len(candidates)}")
 
 
+LEAD_ONLY_ROLES = frozenset(
+    {"reputable_news_lead", "paper_abstract_only", "community_case_lead", "anonymous_opinion"}
+)
+
+
+def lead_only_without_primary(candidate: dict[str, Any]) -> str | None:
+    """Return a reason when a lead_only candidate never reached primary evidence.
+
+    docs/03: a lead_only source may surface a problem but cannot be upgraded before
+    the original record is in hand. The judge reads prose and can be talked past an
+    interstitial; this check cannot.
+    """
+    context = candidate.get("context") or {}
+    role = str(candidate.get("evidence_role") or candidate.get("source_role") or "")
+    if not (bool(context.get("lead_only")) or role in LEAD_ONLY_ROLES):
+        return None
+    enrichment = candidate.get("enrichment") or {}
+    status = str(enrichment.get("status") or "unavailable")
+    if status == "ok":
+        return None
+    return str(enrichment.get("error") or status)
+
+
 def normalize_evidence_decision(
     candidate: dict[str, Any], row: dict[str, Any], pillars: dict[str, Any]
 ) -> dict[str, Any]:
     cleaned = dict(row)
     cleaned["candidate_id"] = candidate["candidate_id"]
+    if cleaned.get("decision") == "keep":
+        missing = lead_only_without_primary(candidate)
+        if missing:
+            cleaned["decision"] = "watch"
+            note = f"回源未取得一手证据（{missing}），线索型来源不得升级为原创"
+            prior = str(row.get("reason") or "").strip()
+            cleaned["reason"] = f"{note}；判官原判：{prior}" if prior else note
+            cleaned["downgraded_from"] = "keep"
     valid_columns = {
         column_id
         for column_id, definition in (pillars.get("columns") or {}).items()
@@ -976,11 +1171,34 @@ def _cell(value: Any, limit: int = 420) -> str:
     return str(value or "—").replace("|", "\\|").replace("\n", " ")[:limit]
 
 
+_DOI_IN_TEXT = re.compile(r"10\.\d{4,9}/[^\s;；,，、（）\[\]]+")
+
+
+def _source_url(candidate: dict[str, Any]) -> str:
+    """A clickable URL, or empty string if the source genuinely has none.
+
+    Curated cells carry their anchor as a locator (often a DOI plus a Chinese note),
+    not a url, so a naive candidate['url'] renders an empty or malformed link.
+    """
+    url = str(candidate.get("url") or "").strip()
+    if url.startswith("http"):
+        match = _DOI_IN_TEXT.search(url)
+        # Strip any trailing prose that got concatenated into the locator.
+        return f"https://doi.org/{match.group(0)}" if match and "doi.org" in url else url
+    anchor = (candidate.get("curated") or {}).get("anchor") or {}
+    match = _DOI_IN_TEXT.search(str(anchor.get("locator") or ""))
+    if match:
+        return f"https://doi.org/{match.group(0)}"
+    return str(anchor.get("url") or "").strip()
+
+
 def _source(candidate: dict[str, Any]) -> str:
     label = candidate.get("title") or str(candidate.get("text") or "")[:90] or candidate["candidate_id"]
     handle = _account_handle(candidate)
     prefix = f"@{handle}: " if handle else ""
-    return f"[{_cell(prefix + str(label), 120)}]({candidate.get('url')})"
+    text = _cell(prefix + str(label), 120)
+    url = _source_url(candidate)
+    return f"[{text}]({url})" if url else text
 
 
 def _named(path: str, section: str, key: Any) -> str:
@@ -989,6 +1207,15 @@ def _named(path: str, section: str, key: Any) -> str:
         return "—"
     definition = (load_yaml(REPO / "config" / path).get(section) or {}).get(str(key)) or {}
     return _cell(definition.get("name") or key, 40)
+
+
+def _deadline(candidate: dict[str, Any]) -> str:
+    """Structured comment/close date if the source carries one (Federal Register)."""
+    for entry in candidate.get("provenance") or []:
+        close = (entry or {}).get("comments_close_on")
+        if close:
+            return str(close)
+    return "—"
 
 
 def _operator_label(row: dict[str, Any]) -> str:
@@ -1026,12 +1253,26 @@ def _rotation_section(
             "",
         ])
     if form_usage:
-        lines.extend(["| 形态 | 本期 | 近 7 天 |", "|---|---:|---:|"])
+        lines.extend(["| 形态 | 本期 | 近 7 天 | 上限 |", "|---|---:|---:|---|"])
         for form_id, counts in sorted(form_usage.items()):
+            caps = "/".join(
+                str(counts.get(key) if counts.get(key) is not None else "—")
+                for key in ("report_cap", "week_cap")
+            )
+            flag = " ⚠️" if counts.get("over") else ""
             lines.append(
-                f"| {_named('forms.yml', 'forms', form_id)} | {counts['report']} | {counts['week']} |"
+                f"| {_named('forms.yml', 'forms', form_id)}{flag} | {counts['report']} | "
+                f"{counts['week']} | {caps} |"
             )
         lines.append("")
+        over_lines = [
+            f"> 形态告警：{_named('forms.yml', 'forms', form_id)} —— {'；'.join(counts['over'])}。"
+            f"形态与算子刻意解耦，换形态、不换选题。"
+            for form_id, counts in sorted(form_usage.items())
+            if counts.get("over")
+        ]
+        if over_lines:
+            lines.extend(over_lines + [""])
     return lines
 
 
@@ -1064,31 +1305,54 @@ def render_report(
         if row["decision"] == "keep" and row["primary_action"] == "original_post"
     ]
     form_usage = enforce_form_quota(original_rows, day)
+    # Order originals column-by-column so the index and the detail below use the
+    # same numbering. The old layout was one 11-column table per section — every
+    # cell held a paragraph, so it only read after horizontal scrolling. Now: a
+    # narrow index up top, then one vertical table per item (field | content),
+    # which wraps instead of scrolling.
+    ordered: list[tuple[int, str, dict[str, Any]]] = []
     for column_id, definition in columns.items():
-        grouped = [row for row in original_rows if row["primary_destination"] == column_id]
-        if not grouped:
-            continue
-        lines.extend(
-            [
-                f"## {definition['name']}", "",
-                "| 来源 | 来源明确说了什么 | 为什么现在值得看 | 为什么适合 Apodex | 可写角度 | 算子 | 形态 | 轴 | 推断边界 | 发布前需核验 | 状态 |",
-                "|---|---|---|---|---|---|---|---|---|---|---|",
-            ]
-        )
-        for row in grouped:
+        for row in (r for r in original_rows if r["primary_destination"] == column_id):
+            ordered.append((len(ordered) + 1, str(definition["name"]), row))
+
+    if ordered:
+        deadlines = [
+            (num, _deadline(candidates[row["candidate_id"]]))
+            for num, _name, row in ordered
+        ]
+        with_dates = [f"#{num} 截止 {close}" for num, close in deadlines if close != "—"]
+        summary = f"今天可写 {len(ordered)} 条"
+        if with_dates:
+            summary += "，有截止日：" + " · ".join(with_dates)
+        lines.extend([summary, "", "## 速览", "", "| # | 栏目 | 一句话角度 | 形态 | 截止日 |", "|---|---|---|---|---|"])
+        for num, name, row in ordered:
             candidate = candidates[row["candidate_id"]]
             lines.append(
-                "| " + " | ".join(
-                    [
-                        _source(candidate), _cell(row["source_says"]), _cell(row["why_now"]),
-                        _cell(row["why_apodex"]), _cell(row["possible_angle"]),
-                        _operator_label(row), _form_label(row), _axis_label(row),
-                        _cell(row["inference_boundary"]), _cell(row["needs_verification"]), "Idea",
-                    ]
-                ) + " |"
+                f"| {num} | {name} | {_cell(row['possible_angle'], 70)} | {_form_label(row)} | {_deadline(candidate)} |"
             )
         lines.append("")
-    lines.extend(_rotation_section(original_rows, form_usage))
+
+    for num, name, row in ordered:
+        candidate = candidates[row["candidate_id"]]
+        combo = f"{_operator_label(row)} · {_form_label(row)} · {_axis_label(row)}"
+        lines.extend([
+            f"## {num} · {name}", "",
+            _source(candidate), "",
+            "| 字段 | 内容 |", "|---|---|",
+            f"| 一句话角度 | {_cell(row['possible_angle'])} |",
+            f"| 来源说了什么 | {_cell(row['source_says'])} |",
+            f"| 为什么现在 | {_cell(row['why_now'])} |",
+            f"| 为什么是我们 | {_cell(row['why_apodex'])} |",
+            f"| 推断边界（不能写成事实的） | {_cell(row['inference_boundary'])} |",
+            f"| 发布前需核验 | {_cell(row['needs_verification'])} |",
+            f"| 截止日 | {_deadline(candidate)} |",
+            f"| 算子·形态·轴 | {combo} |",
+            "",
+        ])
+    # 轮换自查 / 观察 / 来源覆盖三节已于 2026-07-29 从日报移除（Selene 明确要求）：
+    # 它们是运行体检，不是选题决策，Selene 在对话里拿就够了。
+    # form_usage 仍然计算，因为配额校验要用；只是不再打印。
+    _ = form_usage
     for platform, title, valid_actions in (
         ("x", "X 互动池", {"x_reply", "x_quote"}),
         ("reddit", "Reddit 互动池", {"reddit_reply"}),
@@ -1113,31 +1377,34 @@ def render_report(
                 ) + " |"
             )
         lines.append("")
-    watch = [row for row in rows if row["decision"] == "watch"]
-    rejected = [row for row in rows if row["decision"] == "reject"]
-    if watch:
-        lines.extend(["## 观察", "", "| 来源 | 原因 |", "|---|---|"])
-        for row in watch:
-            lines.append(f"| {_source(candidates[row['candidate_id']])} | {_cell(row['reason'])} |")
-        lines.append("")
-    audit = source.get("source_audit") or {}
-    if audit:
-        labels = {
-            "x": "X",
-            "community": "Community leads",
-            "official_update": "Official updates",
-            "rss_news": "RSS / News",
-            "decision_window": "Decision windows",
-        }
-        lines.extend(["## 来源覆盖", "", "| 来源组 | Recall 可 enrichment | 实际进入终审 |", "|---|---:|---:|"])
-        for bucket, counts in audit.items():
-            lines.append(f"| {labels.get(bucket, bucket)} | {counts.get('eligible', 0)} | {counts.get('queued', 0)} |")
-        lines.append("")
-    lines.extend(["## 终审淘汰", "", "| 来源 | 原因 |", "|---|---|"])
-    for row in rejected:
-        lines.append(f"| {_source(candidates[row['candidate_id']])} | {_cell(row['reason'])} |")
-    lines.append("")
+    # 观察 / 来源覆盖 / 终审淘汰三节不再进日报（2026-07-29）。
+    # 它们回答的是"系统跑得怎么样"，不是"今天写什么"；数据仍在
+    # .evidence-clean-*.json 里，跑完由 Claude 在对话里报。
     return "\n".join(lines)
+
+
+def scan_evidence(args: argparse.Namespace) -> None:
+    """Collect every Evidence-stage violation without dying on the first.
+
+    The judge mis-pairs intent/shape/thesis at Stage 2 just as it does at Stage 1
+    (observed 2026-07-29: EI3 x PS8). This lets run_oracle re-judge the offending
+    rows instead of a human hand-editing evidence-raw.
+    """
+    source = load_json(args.candidates)
+    judged = load_json_loose(args.judged)
+    candidates = {item["candidate_id"]: item for item in source.get("candidates") or []}
+    decisions = decision_map(judged, set(candidates), EVIDENCE_STATES, "Evidence")
+    pillars = load_yaml(REPO / "config" / "pillars.yml")
+    illegal: list[dict[str, str]] = []
+    for candidate_id, row in decisions.items():
+        try:
+            normalize_evidence_decision(candidates[candidate_id], row, pillars)
+        except SystemExit as exc:
+            illegal.append({"candidate_id": candidate_id, "reason": str(exc)})
+    payload = {"ok": not illegal, "illegal": illegal}
+    if args.out:
+        Path(args.out).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps(payload, ensure_ascii=False))
 
 
 def render(args: argparse.Namespace) -> None:
@@ -1170,6 +1437,7 @@ def render(args: argparse.Namespace) -> None:
             if row["decision"] == "keep" and row["primary_action"] == "original_post"
         ],
     )
+    record_evergreen_usage(day, candidates, normalized)
     connection = state_connection()
     try:
         record_outcomes(connection, "evidence", run_id, candidates, decisions)
@@ -1198,6 +1466,18 @@ def build_parser() -> argparse.ArgumentParser:
     recall.add_argument("--candidates", required=True)
     recall.add_argument("--out", required=True)
     recall.add_argument("--queue-out", required=True)
+    scanner = sub.add_parser("scan-recall")
+    scanner.add_argument("judged")
+    scanner.add_argument("--candidates", required=True)
+    scanner.add_argument("--out")
+    escanner = sub.add_parser("scan-evidence")
+    escanner.add_argument("judged")
+    escanner.add_argument("--candidates", required=True)
+    escanner.add_argument("--out")
+    splicer = sub.add_parser("splice-recall")
+    splicer.add_argument("--base", required=True)
+    splicer.add_argument("--patch", nargs="+", required=True)
+    splicer.add_argument("--out", required=True)
     evidence = sub.add_parser("render")
     evidence.add_argument("judged")
     evidence.add_argument("--candidates", required=True)
@@ -1208,7 +1488,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     argv = sys.argv[1:]
-    commands = {"prefilter", "recall-chunks", "merge-recall", "validate-recall", "render"}
+    commands = {
+        "prefilter", "recall-chunks", "merge-recall", "validate-recall",
+        "scan-recall", "scan-evidence", "splice-recall", "render",
+    }
     if argv and argv[0] not in commands and not argv[0].startswith("-"):
         argv.insert(0, "prefilter")
     args = build_parser().parse_args(argv)
@@ -1220,6 +1503,12 @@ def main() -> None:
         merge_recall(args)
     elif args.command == "validate-recall":
         validate_recall(args)
+    elif args.command == "scan-recall":
+        scan_recall(args)
+    elif args.command == "scan-evidence":
+        scan_evidence(args)
+    elif args.command == "splice-recall":
+        splice_recall(args)
     else:
         render(args)
 

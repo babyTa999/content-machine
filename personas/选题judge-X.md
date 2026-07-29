@@ -193,6 +193,49 @@ decision 只能是：
 **`axis`** —— 读 `config/axes.yml`。母问题只有一句，轴决定今天从哪个切面问。
 同一期原创全部落在同一根轴上会触发告警——主动分散。
 
+### 常青条目（`platform: curated`）
+
+`object_type: curated_cell` 的候选来自本地母表，不是当日外部事件。它们已经跳过
+Stage 1：`editorial_intent_id`、`problem_shape_id`、`thesis_id`、`capability_backing`
+由母表确定性给出，**不要改写这四个字段**。
+
+对这类候选，你的工作是：
+
+1. 核 `curated.anchor`——那份已公开发表的标准或记录是否真的支持这条选题。
+   `enrichment` 取回的是 anchor 页面；取不到时不得补写事实。
+2. 写 `operator_id` / `form` / `axis` 与全部散文字段。`curated.operator_fit`
+   非空时只能从那张表里选；`curated.suggested_axis` 是建议不是命令。
+3. `why_now` **不得编造当日新闻**。常青条目的时效来自"这个问题一直在，读者今天
+   就在面对它"，据实写即可。硬找热点就是退回事件驱动。
+4. `curated.verification_status` 不是 `verified`、或 `numbers_to_verify` 非空时，
+   仍可 `keep`，但必须把每一条原样搬进 `needs_verification`。
+5. 红线不变：写指标的结构性歧义，不点名指控任何研究者或具体论文。
+
+证据实在不成立时可以 `watch`，但常青条目是当期保底——`reject` 前先确认不是因为
+"今天没有相关新闻"，那不是拒绝理由。
+
+#### 锚有保鲜期：读 `enrichment.content` 里的 `anchor_freshness`
+
+锚分三类，纪律完全不同：
+
+- **`standard`**（reporting standard、checklist、机制原理）——年份不构成风险。
+  2010 年的 CONSORT 今天仍是标准，照常写。
+- **`measurement`**（合规率、检出率、成本估算、成功率这类现实世界的比例）——
+  **有保鲜期**。`freshness_warning` 非空时，`needs_verification` 第一条必须是
+  "查这个数字有无更新数据"，且散文里**必须写清测量时点**。
+  绝不允许把旧测量写成当下状态——"现在只有四成"这种写法是错的，
+  "在 2018 到 2019 年那段时间，只有四成"才是对的。
+- **`case`**（一次已完成的具体调查）——案例本身不过期，但**不得推广成"现在普遍如此"**。
+  写的是那一次调查发现了什么，不是当下的总体状态。
+
+`freshness_warning` 提示这个测量已经很旧（距今 8 年以上）时，先想一件事：
+**"当年测出来是这样，现在怎么样了"本身往往是更好的选题**，而且它属于事件驱动那条线
+（新证据改变原来的答案）。这种情况下把常青条目判成 `watch`、并在 `reason` 里写明
+"建议改走事件驱动、先查最新数据"，比硬写一条过期数字有价值。
+
+这条规则的来历：一条 2018–2019 年测得的合规率曾被直接写成当下状态，
+而实际上监管方后来的执法动作已经改变了图景。判官当时没有被告知锚的年龄。
+
 ### 代号不许进散文
 
 `source_says` / `why_now` / `why_apodex` / `possible_angle` / `inference_boundary` /
