@@ -97,3 +97,266 @@ filter:
   window_hours: 48
   skip_retweets: true
   eng_formula: "likes + 2*retweets + 2*quotes + replies"
+
+# ========== 互动池 · KOL 个人号（Selene 2026-07-29 供料：Influcio-KOL 进度表 Thread池）==========
+# 与上面的选题源彻底分开：这批只喂 C8 互动（quote / reply），不进原创选题池。
+# 依据：机构官号发论文推广做不了原创（07-27 实跑 48 条 0 keep），但个人 KOL 发的是
+# 观点与立场，是 quote 的原料。三判据见 内容/竞品brain.md §6.6：
+#   ① 主题跟验证母题同构 ② 立场上我们是帮忙的人不是被说的人 ③ 层级配得上官号
+# 工程师聊实现细节的那类走老板个人号，不走官号。
+interaction_pool:
+  ai4science:                     # AI4Science 研究者（62 人）
+    - handle: StefanoErmon
+      note: "Stefano Ermon · AI Research (Stanford 教授)"
+    - handle: ren_hongyu
+      note: "Hongyu Ren · AI Research (Meta, ex-OpenAI)"
+    - handle: willdepue
+      note: "will depue · AI Research (ex-OpenAI)"
+    - handle: r_de_santi
+      note: "Riccardo De Santi · AI for Science (ETH AI Center)"
+    - handle: mattpocockuk
+      note: "@mattpocockuk · AI4Sci"
+    - handle: chrmanning
+      note: "@chrmanning · AI4Sci"
+    - handle: pmddomingos
+      note: "@pmddomingos · AI4Sci"
+    - handle: YiMaTweets
+      note: "@YiMaTweets · AI4Sci"
+    - handle: docmilanfar
+      note: "@docmilanfar · AI4Sci"
+    - handle: rsalakhu
+      note: "@rsalakhu · AI4Sci"
+    - handle: NandoDF
+      note: "@NandoDF · AI4Sci"
+    - handle: DanKornas
+      note: "@DanKornas · AI4Sci"
+    - handle: SebastienBubeck
+      note: "@SebastienBubeck · AI4Sci"
+    - handle: sirbayes
+      note: "@sirbayes · AI4Sci"
+    - handle: sedielem
+      note: "@sedielem · AI4Sci"
+    - handle: roydanroy
+      note: "@roydanroy · AI4Sci"
+    - handle: mmbronstein
+      note: "@mmbronstein · AI4Sci"
+    - handle: matei_zaharia
+      note: "@matei_zaharia · AI4Sci"
+    - handle: tydsh
+      note: "@tydsh · AI4Sci"
+    - handle: Yoshua_Bengio
+      note: "@Yoshua_Bengio · AI4Sci"
+    - handle: tri_dao
+      note: "@tri_dao · AI4Sci"
+    - handle: MillionInt
+      note: "@MillionInt · AI4Sci"
+    - handle: andrewgwils
+      note: "@andrewgwils · AI4Sci"
+    - handle: jasondeanlee
+      note: "@jasondeanlee · AI4Sci"
+    - handle: beenwrekt
+      note: "@beenwrekt · AI4Sci"
+    - handle: rodneyabrooks
+      note: "@rodneyabrooks · AI4Sci"
+    - handle: jeffclune
+      note: "@jeffclune · AI4Sci"
+    - handle: yacinelearning
+      note: "@yacinelearning · AI4Sci"
+    - handle: DimitrisPapail
+      note: "@DimitrisPapail · AI4Sci"
+    - handle: prfsanjeevarora
+      note: "@prfsanjeevarora · AI4Sci"
+    - handle: stevibe
+      note: "@stevibe · AI4Sci"
+    - handle: james_y_zou
+      note: "@james_y_zou · AI4Sci"
+    - handle: juliarturc
+      note: "@juliarturc · AI4Sci"
+    - handle: willknight
+      note: "@willknight · AI4Sci"
+    - handle: DlCountdown
+      note: "@DlCountdown · AI4Sci"
+    - handle: ProfBuehlerMIT
+      note: "@ProfBuehlerMIT · AI4Sci"
+    - handle: fin465
+      note: "@fin465 · AI4Sci"
+    - handle: ShamKakade6
+      note: "@ShamKakade6 · AI4Sci"
+    - handle: ChrisGPotts
+      note: "@ChrisGPotts · AI4Sci"
+    - handle: sayashk
+      note: "@sayashk · AI4Sci"
+    - handle: ziv_ravid
+      note: "@ziv_ravid · AI4Sci"
+    - handle: du_yilun
+      note: "@du_yilun · AI4Sci"
+    - handle: ArashVahdat
+      note: "@ArashVahdat · AI4Sci"
+    - handle: keennay
+      note: "@keennay · AI4Sci"
+    - handle: thomasahle
+      note: "@thomasahle · AI4Sci"
+    - handle: gregd_nlp
+      note: "@gregd_nlp · AI4Sci"
+    - handle: Lianhuiq
+      note: "@Lianhuiq · AI4Sci"
+    - handle: rosinality
+      note: "@rosinality · AI4Sci"
+    - handle: kerstingAIML
+      note: "@kerstingAIML · AI4Sci"
+    - handle: drmapavone
+      note: "@drmapavone · AI4Sci"
+    - handle: aran_nayebi
+      note: "@aran_nayebi · AI4Sci"
+    - handle: hu_yifei
+      note: "@hu_yifei · AI4Sci"
+    - handle: huang_biwei
+      note: "@huang_biwei · AI4Sci"
+    - handle: msharmavikram
+      note: "@msharmavikram · AI4Sci"
+    - handle: orvieto_antonio
+      note: "@orvieto_antonio · AI4Sci"
+    - handle: nandofioretto
+      note: "@nandofioretto · AI4Sci"
+    - handle: sethkarten
+      note: "@sethkarten · AI4Sci"
+    - handle: dvruette
+      note: "@dvruette · AI4Sci"
+    - handle: nmboffi
+      note: "@nmboffi · AI4Sci"
+    - handle: ameya_pa
+      note: "@ameya_pa · AI4Sci"
+    - handle: jramapuram
+      note: "@jramapuram · AI4Sci"
+    - handle: FEijkelboom
+      note: "@FEijkelboom · AI4Sci"
+  life_science:                     # 生命科学 / 计算生物（39 人）
+    - handle: paras_biotech
+      note: "Paras Sharma · Biotech Research KOL"
+    - handle: Biotech2k1
+      note: "Biotech2k · Biotech 行业观察 KOL"
+    - handle: yaireinhorn
+      note: "Yair Einhorn · AI 生物医药创业者；聚焦 AI 在药物研发与生命科学中的应用"
+    - handle: biogerontology
+      note: "Alex Zhavoronkov, PhD (aka Ale · 长寿科学研究类 KOL（聚焦衰老生物学、长寿研究及生命科学前沿）"
+    - handle: davidasinclair
+      note: "David Sinclair · 长寿科学权威类 KOL（哈佛教授，全球知名衰老与长寿研究专家）"
+    - handle: KrittanawongMD
+      note: "Chayakrit Krittanawong, MD, FA · Clinical/心脏科 (JACC 编委)"
+    - handle: moritzthuening
+      note: "Moritz Thüning · Bio/AI 药物设计 (Tenstorrent)"
+    - handle: umichkim
+      note: "Jae Kyoung Kim · Math/CompBio (KAIST 教授)"
+    - handle: dominik_scherm
+      note: "Dom · AI for Science/Bio (ex-Prime Intellect)"
+    - handle: shivon
+      note: "@shivon · Bio"
+    - handle: nickcammarata
+      note: "@nickcammarata · Bio"
+    - handle: pdhsu
+      note: "@pdhsu · Bio"
+    - handle: segal_eran
+      note: "@segal_eran · Bio"
+    - handle: NikoMcCarty
+      note: "@NikoMcCarty · Bio"
+    - handle: fabian_theis
+      note: "@fabian_theis · Bio"
+    - handle: rtnarch
+      note: "@rtnarch · Bio"
+    - handle: sokrypton
+      note: "@sokrypton · Bio"
+    - handle: LindorffLarsen
+      note: "@LindorffLarsen · Bio"
+    - handle: silvirouskin
+      note: "@silvirouskin · Bio"
+    - handle: BioAI_NeuralNet
+      note: "@BioAI_NeuralNet · Bio"
+    - handle: prof_horvath
+      note: "@prof_horvath · Bio"
+    - handle: delafuentelab
+      note: "@delafuentelab · Bio"
+    - handle: kenbwork
+      note: "@kenbwork · Bio"
+    - handle: iskander
+      note: "@iskander · Bio"
+    - handle: genophoria
+      note: "@genophoria · Bio"
+    - handle: shelbynewsad
+      note: "@shelbynewsad · Bio"
+    - handle: MartinPacesa
+      note: "@MartinPacesa · Bio"
+    - handle: DdelAlamo
+      note: "@DdelAlamo · Bio"
+    - handle: itsEmZee_
+      note: "@itsEmZee_ · Bio"
+    - handle: RyanTScott
+      note: "@RyanTScott · Bio"
+    - handle: super_jrub
+      note: "@super_jrub · Bio"
+    - handle: CorinWagen
+      note: "@CorinWagen · Bio"
+    - handle: DavidTurturean
+      note: "@DavidTurturean · Bio"
+    - handle: IamLinghua
+      note: "@IamLinghua · Bio"
+    - handle: yusufroohani
+      note: "@yusufroohani · Bio"
+    - handle: stephanie_mul
+      note: "@stephanie_mul · Bio"
+    - handle: JakubTomek13
+      note: "@JakubTomek13 · Bio"
+    - handle: GeLiuSaber
+      note: "@GeLiuSaber · Bio"
+    - handle: the_tessallator
+      note: "@the_tessallator · Bio"
+  legal:                     # Legal / LegalTech（16 人）
+    - handle: heyitsalexsu
+      note: "Alex Su · LegalTech (Latitude)"
+    - handle: NeelGuha
+      note: "Neel Guha · LegalTech/AI (Columbia Law 教授)"
+    - handle: OrinKerr
+      note: "@OrinKerr · LegalTech"
+    - handle: nicholas_bagley
+      note: "@nicholas_bagley · LegalTech"
+    - handle: LegalNaija
+      note: "@LegalNaija · LegalTech"
+    - handle: HoffProf
+      note: "@HoffProf · LegalTech"
+    - handle: neil_chilson
+      note: "@neil_chilson · LegalTech"
+    - handle: MeganTStevenson
+      note: "@MeganTStevenson · LegalTech"
+    - handle: derektmuller
+      note: "@derektmuller · LegalTech"
+    - handle: RichardMRe
+      note: "@RichardMRe · LegalTech"
+    - handle: Aaron_L_Nielson
+      note: "@Aaron_L_Nielson · LegalTech"
+    - handle: ketanrama
+      note: "@ketanrama · LegalTech"
+    - handle: KevinTFrazier
+      note: "@KevinTFrazier · LegalTech"
+    - handle: bc_butler
+      note: "@bc_butler · LegalTech"
+    - handle: zebanderson
+      note: "@zebanderson · LegalTech"
+    - handle: curl_justin
+      note: "@curl_justin · LegalTech"
+  biotech_investor:                     # Biotech 投资（3 人）
+    - handle: bradloncar
+      note: "Brad Loncar · Biotech 投资 KOL（Biotech 投资人；专注生物科技上市公司、市场分析，f"
+    - handle: andrewpannu
+      note: "Andrew Pannu · Biotech 投资 / Healthcare VC KOL"
+    - handle: bravo_abad
+      note: "Jorge Bravo Abad · 生物科技创业/投资类 KOL（关注 Biotech 创业、融资及产业发展）"
+  physics:                     # 物理 / 天体（2 人）
+    - handle: kylekabasares
+      note: "Kyle Kabasares · Physics/天体物理 (ex-NASA)"
+    - handle: SinghJyotirmai
+      note: "@SinghJyotirmai · Physics"
+  math:                     # 数学 / 计算生物（1 人）
+    - handle: antoniolupetti
+      note: "Antonio Lupetti · Math/AI (Algebrica)"
+  finance:                     # Finance / 宏观（1 人）
+    - handle: DrJStrategy
+      note: "James E. Thorne · Finance/宏观 (Wellington-Altus)"

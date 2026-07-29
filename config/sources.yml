@@ -20,6 +20,7 @@ recall:
     anonymous_opinion: 0
   max_enrichment_candidates: 32
   enrichment_budgets:
+    # evergreen 不在这里配额：常青条目是当期保底，在预算切分之前先入座。
     official_update: 10
     x: 8
     decision_window: 6
@@ -41,21 +42,32 @@ source_role_rules:
   rss_nature: paper_abstract_only
   rss_science: reputable_news_lead
   hackernews: community_case_lead
+  federal_register: official_record
+  evergreen_ei6: primary_report
+  evergreen_ei7: primary_report
 
 x_watchlist:
   method: safe-social x user-posts
-  status: auto
+  status: disabled
   handles_per_run: 12
   posts_per_handle: 12
   window_h_individual: 72
   window_h_institution: 168
   request_interval_s: 4.0
-  note: "优先机构、监管者、标准组织、可信专家；账号价值与互动资格分开判断。"
+  note: |
+    已停用（2026-07-28）：2026-07-27 实跑 48 条候选、0 keep、0 interaction，其中 45 条
+    来自机构官号（ScienceMagazine / Nature / NIH / broadinstitute / embl / arcinstitute），
+    发的是论文推广——母题要的是现实决策、机构分歧、开放窗口与记录改变结论，论文发现
+    在结构上永远不匹配。按人和机构订阅出不了题，按 intent 事件触发词搜才出题，
+    X 调用配额已全部转给 x_keyword_search。
+    watchlist.yml 保留不动：竞品红线仍在用，C8 互动线若要重启需另按互动标准建名单。
 
 x_keyword_search:
   method: safe-social x search
   status: auto
-  intent_groups_per_run: 5
+  # 2026-07-28 提额：x_watchlist 停用后，X 的调用预算全部转到这里。
+  # 依据：07-27 实跑中这是唯一产出 keep 的 X 路径（2/46）。
+  intent_groups_per_run: 7
   lang: en
   exclude: [retweets]
   request_interval_s: 4.0
@@ -118,9 +130,10 @@ science_rss:
   limit_per_feed: 12
   lead_only: true
   feeds:
-    Nature:
-      url: https://www.nature.com/nature.rss
-      evidence_role: paper_abstract_only
+    # Nature 主刊 RSS 已于 2026-07-28 移除：evidence_role 是 paper_abstract_only，
+    # 结构上进不了原创（07-27 实跑 12 条 0 keep，判官逐条判"只有论文新鲜度"）。
+    # Science news RSS 保留：它偶尔供决策与记录类事件（07-27 的两条 keep 都来自这里：
+    # FDA 委员会投票、试验死亡未公开），是全场 keep 率最高的源。
     Science:
       url: https://www.science.org/rss/news_current.xml
       evidence_role: reputable_news_lead
@@ -160,12 +173,37 @@ official_indexes:
       include_paths: [/info/law/better-regulation/have-your-say/initiatives/]
       evidence_role: official_record
       signal_group: decision_window
+      # 07-27 实跑：本源 7 条 watch 全是就业 / 移民 / 机构行政评估——真窗口，
+      # 但与科研赛道母题无实质连接。排除社会与行政政策类，留下科学、健康、
+      # 环境风险、标准与数据治理类。
+      title_exclude:
+        - employment
+        - labour
+        - social security
+        - individual learning
+        - migration
+        - asylum
+        - employers' sanctions
+        - visa
+        - taxation
+        - customs
+        - vat
+        - state aid
+        - consumer credit
+        - copyright
+        - agricultural subsid
+        - rural development
+        - fisheries quota
 
 official_feeds:
   method: rss
-  status: auto
+  status: disabled
   limit_per_feed: 18
   feeds:
+    # 已停用（2026-07-28）：美联储属金融赛道，pillars.yml 与 README 明文规定
+    # 「金融赛道母问题是监管型的，语法不同，需另立 root_question 与独立排期，
+    # 不得混入同一份日报」。07-27 实跑 17 条、0 keep，判官逐条判"非母题事件"
+    # （执法个案、贴现率会议纪要、讣告）。要做金融赛道请另立排期，不要在这里开。
     FederalReserve:
       url: https://www.federalreserve.gov/feeds/press_all.xml
       evidence_role: institutional_update
@@ -173,16 +211,86 @@ official_feeds:
 
 prediction_banks:
   method: jina
-  status: auto
+  status: disabled
+  # 已停用（2026-07-28）：搜索串是 health policy / economy / climate / technology，
+  # 偏政策与金融，与科研赛道错位；07-27 实跑 4 条 0 keep。
+  # 且 metaculus.com 对本机 UA 返回 403，抓取本身也不可靠。
   url: "https://www.metaculus.com/questions/?order_by=-activity&status=open&search=health+policy+economy+climate+technology"
 
 official_challenges:
   method: jina
-  status: auto
+  status: disabled
+  # 已停用（2026-07-28）：悬赏与招标是"征集方案"，不是"仍开放的正式 decision window"，
+  # 与 EI3 形似神不似；07-27 实跑 12 条 0 keep。
   pages:
     USAgov: https://www.usa.gov/find-active-challenge
     XPRIZE: https://www.xprize.org/prizes
     ARPA-H: https://arpa-h.gov/research-and-funding
+
+# 美国联邦公报 API。一个免费无 key 的结构化接口同时补三条 intent 的缺口：
+#   EI3 仍开放的拟议规则与通告（comments_close_on 直接给出窗口截止日，C3 硬性需要）
+#   EI1 已生效的终规（官方答案已经改变）
+# 不用 conditions[term] 全文搜索：实测它是模糊 OR 匹配，配合 order=newest 会让
+# 相关度失效，任何查询都返回同一批最新文档。改用结构化条件 + 标题排除词。
+# 互动池（C8 only）。KOL 个人号，名单在 watchlist.yml → interaction_pool（124 人）。
+# 与选题源彻底分开：机构官号发论文推广做不了原创（07-27 实跑 48 条 0 keep），
+# 个人 KOL 发的是立场，才是 quote 的原料。依据见 内容/竞品brain.md §6.2。
+# min_stance_score 用 _stance_score 打分：立场词 +2、非推广型提问 +1、推广词 -3。
+x_interaction_pool:
+  method: safe-social x user-posts
+  status: auto
+  handles_per_run: 10
+  posts_per_handle: 8
+  window_h: 48
+  min_stance_score: 1
+  request_interval_s: 4.0
+
+federal_register:
+  method: api
+  status: disabled
+  # 已停用（2026-07-29）：这条线是"外部决策窗口雷达"，跟定位不搭。
+  # 证据：这类选题在 Epoch AI 164 条、Ambient 81 条、我们自己 59 条里三边都是 0。
+  # 三家谁都不做的事不该是我们的主力产线。选题引擎该换成
+  # ①自有度量基建产出（Epoch 模型）②拆厂商话术（Ambient 模型），见 内容/竞品brain.md §6。
+  base_url: https://www.federalregister.gov/api/v1/documents.json
+  per_page: 20
+  recent_days: 10
+  agencies:
+    - food-and-drug-administration
+    - environmental-protection-agency
+    - national-institutes-of-health
+    - national-science-foundation
+    - energy-department
+    - national-institute-of-standards-and-technology
+  queries:
+    - name: open_proposed_rule
+      doc_type: PRORULE
+      open_comments_only: true
+      evidence_role: official_record
+      signal_group: decision_window
+    - name: open_notice
+      doc_type: NOTICE
+      open_comments_only: true
+      evidence_role: official_record
+      signal_group: decision_window
+    - name: final_rule
+      doc_type: RULE
+      open_comments_only: false
+      evidence_role: official_record
+      signal_group: evidence_shift
+  # 行政噪音，与母题无关：信息收集表格、州实施计划、和解令、例会公告。
+  # 07-28 实测这几类占 NOTICE 的多数。
+  title_exclude:
+    - agency information collection activities
+    - information collection being reviewed
+    - air plan approval
+    - state implementation plan
+    - consent decree
+    - sunshine act
+    - privacy act of 1974
+    - meeting of the
+    - charter renewal
+    - membership of the
 
 hackernews:
   method: api
@@ -190,6 +298,55 @@ hackernews:
   query: research decision evidence
   hits: 6
   note: "watch-only；不直接形成原创。"
+
+# 常青产线（第二条产线）。EI1–EI5 全部事件驱动，没新闻的一周就断供；这里的选题
+# 来自本地 curated 母表，热点只提供可选 timing，不提供选题。
+# 这些候选绕过 Recall Judge（母题匹配由母表确定性给出），但仍进 Evidence Judge，
+# 因为 operator / form / axis 与散文字段仍是编辑判断。
+# 可持续产能 = **有可用锚的**母表条数 ÷ entry_cooldown_days。
+# 没有锚的条目（verification_status: source_incomplete 或缺 locator）不进池——
+# 硬准入未满足，写它就得编来源。
+# per_run 只是阀门：池子不够时 collect 自动少给，不会硬凑。
+# 要稳定每天 2 条，可用池需要约 60 条。
+evergreen:
+  status: auto
+  per_run: 2
+  entry_cooldown_days: 30
+  # 格子粒度由母表的 cell 字段决定（checker_library 用检查者/代价方，
+  # confound_library 退回学科）。此前锁到整个学科，6 个学科等于把 72 格压成 6 格。
+  cell_cooldown_days: 12
+  discipline_per_week: 3
+  libraries:
+    EI8_verification_role_gap:
+      path: config/checker_library.yml
+      collection: entries
+      # 这张表每条自带 problem_shape_id / thesis_id / axis，条目值覆盖下面的默认值。
+      problem_shape_id: PS8_auditable_conclusion
+      thesis_id: T2_independent_verification
+      likely_column: C1
+      capability_backing: technical_report
+      signal_role: stake
+      axis: AX4_who_checks
+    EI6_missing_control:
+      path: config/confound_library.yml
+      collection: confounds
+      problem_shape_id: PS10_missing_control
+      thesis_id: T2_independent_verification
+      likely_column: C1
+      capability_backing: technical_report
+      signal_role: real_case
+      axis: AX3_alternative_explanation_type
+    # EI7（跨学科同构）暂未接入：它需要一张自己的母表，条目由 Selene 供料。
+    # 母表建好后把下面这段取消注释即可，代码不用改。
+    # EI7_cross_field_isomorphism:
+    #   path: config/isomorphism_library.yml
+    #   collection: isomorphisms
+    #   problem_shape_id: PS11_cross_field_isomorphism
+    #   thesis_id: T9_cross_domain_synthesis
+    #   likely_column: C1
+    #   capability_backing: website
+    #   signal_role: real_case
+    #   axis: AX8_cross_field_isomorphism
 
 owned_materials:
   status: manual
