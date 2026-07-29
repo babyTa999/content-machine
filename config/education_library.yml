@@ -45,6 +45,9 @@ entries:
   # ================= 最强的一组：GVR 与自我验证 =================
 
   EDU_gvr_advanced_tripling:
+    cell: verification_loop
+    problem_shape_id: PS8_auditable_conclusion
+    thesis_id: T3_asynchronous_verification
     claim: "在最难的那档数学证明题上，让模型自己评自己再改，分数接近翻了三倍。"
     number: "12.38 → 34.29"
     number_type: metric
@@ -62,6 +65,9 @@ entries:
     form: mid_post
 
   EDU_grader_never_sees_answer:
+    cell: verification_role
+    problem_shape_id: PS8_auditable_conclusion
+    thesis_id: T2_independent_verification
     claim: "我们刻意不让打分的那一环看到参考答案——泄露给它，分数会虚高，而不是模型变好。"
     number: "0 次看到参考答案与 rubric"
     number_type: coordinate
@@ -79,6 +85,9 @@ entries:
     form: short_assertion
 
   EDU_self_audit_missing:
+    cell: self_audit
+    problem_shape_id: PS8_auditable_conclusion
+    thesis_id: T2_independent_verification
     claim: "我们做验证，却还没公开验证过自己。"
     number: "0 份公开的自我复核报告"
     number_type: coordinate
@@ -100,6 +109,9 @@ entries:
   # ================= Agent team 与单 agent 天花板 =================
 
   EDU_react_ceiling:
+    cell: architecture
+    problem_shape_id: PS7_branching_investigation
+    thesis_id: T7_agent_level_scaling
     claim: "单 agent 的 ReAct 循环有个天花板，加参数和加 context 都撞不破——因为天花板在它们下面。"
     number: "几百步后饱和 vs 15,000+ 步"
     number_type: metric
@@ -117,6 +129,9 @@ entries:
     form: mid_post
 
   EDU_verification_must_be_external:
+    cell: verification_role
+    problem_shape_id: PS8_auditable_conclusion
+    thesis_id: T2_independent_verification
     claim: "可靠的验证不只要多样，必须真正在外部——让推理的人自己回头检查，结构上就不成立。"
     number: "3 个独立验证角色"
     number_type: coordinate
@@ -136,6 +151,9 @@ entries:
     form: mid_post
 
   EDU_conclusions_auditable:
+    cell: auditability
+    problem_shape_id: PS8_auditable_conclusion
+    thesis_id: T6_auditable_history
     claim: "异步不只是快——它让结论变得可审计、可撤回、可分叉。"
     number: "3 个独立控制回路"
     number_type: coordinate
@@ -154,6 +172,9 @@ entries:
   # ================= pseudo-correctness（对 PI 最有共鸣的一条） =================
 
   EDU_pseudo_correctness:
+    cell: scoring_design
+    problem_shape_id: PS10_missing_control
+    thesis_id: T2_independent_verification
     claim: "一个用 try/except 把 bug 盖住的补丁，读起来比正确的修法更干净——所以「看起来更好」不能当判据。"
     number: "3 条独立评分轴"
     number_type: coordinate
@@ -177,6 +198,9 @@ entries:
   # ================= 数据构造：难度校准 =================
 
   EDU_calibrated_difficulty:
+    cell: scoring_design
+    problem_shape_id: PS10_missing_control
+    thesis_id: T2_independent_verification
     claim: "一道题只有在「至少一个模型做对、至少一个模型做错」时才留下——这样它才卡在能力前沿上。"
     number: "至少 1 成功 + 至少 1 失败"
     number_type: coordinate
@@ -193,6 +217,9 @@ entries:
     form: short_assertion
 
   EDU_every_claim_traceable:
+    cell: auditability
+    problem_shape_id: PS8_auditable_conclusion
+    thesis_id: T6_auditable_history
     claim: "每一条原子主张都必须能追回一个可引用的出处，否则不进知识记忆。"
     number: "1 个可引用出处 / 每条主张"
     number_type: coordinate
@@ -210,6 +237,9 @@ entries:
   # ================= AgentOS =================
 
   EDU_folder_not_patch:
+    cell: architecture
+    problem_shape_id: PS7_branching_investigation
+    thesis_id: T7_agent_level_scaling
     claim: "加一个新应用应该是加一个文件夹，不是给内核打补丁。"
     number: "5 个扩展点 / 1 个内核 / 十几个 workflow"
     number_type: coordinate
@@ -229,6 +259,9 @@ entries:
   # ================= 内部 benchmark：自造坐标系（对应 RBE 那条路） =================
 
   EDU_hard_deep_research_design:
+    cell: verification_role
+    problem_shape_id: PS8_auditable_conclusion
+    thesis_id: T2_independent_verification
     claim: "我们自己那套题，答案形状是封闭的——所以能被程序确定性地打分，而不是让另一个模型来评。"
     number: "41 道题 / 10 个领域"
     number_type: coordinate
@@ -247,6 +280,9 @@ entries:
     form: mid_post
 
   EDU_hallucination_penalty:
+    cell: scoring_design
+    problem_shape_id: PS10_missing_control
+    thesis_id: T2_independent_verification
     claim: "会扣分的题才看得出区别：六个基线里四个报了错的药名，各被扣到 −4。"
     number: "4/6 基线拿 −4，Apodex 三个配置全 4/4"
     number_type: metric
@@ -267,6 +303,9 @@ entries:
     form: mid_post
 
   EDU_over_claim_penalty:
+    cell: scoring_design
+    problem_shape_id: PS10_missing_control
+    thesis_id: T2_independent_verification
     claim: "同一道题，追求全覆盖的模型报了多达十五个名字——正确答案只有三个。"
     number: "3 个正确答案 vs 最多 15 个名字；Claude-Opus-4.7 被扣 8 分"
     number_type: metric
@@ -288,6 +327,9 @@ entries:
   # ================= 能力保持（回应"专精会不会损伤通用"） =================
 
   EDU_no_capability_trade:
+    cell: capability_shape
+    problem_shape_id: PS10_missing_control
+    thesis_id: T2_independent_verification
     claim: "把模型往深度研究上推，不必拿通用能力去换——同尺寸对照下每项都在一分以内。"
     number: "≤1 分差距；HMMT Feb 25 反而 100.0 vs 94.8"
     number_type: metric
@@ -309,6 +351,9 @@ entries:
     form: mid_post
 
   EDU_small_model_from_data:
+    cell: capability_shape
+    problem_shape_id: PS10_missing_control
+    thesis_id: T2_independent_verification
     claim: "4B 的模型在深度研究任务上打过了所有开源 30B 级——靠的是数据构造，不是尺寸。"
     number: "4B: BrowseComp 48.8 / BrowseComp-ZH 63.5"
     number_type: metric

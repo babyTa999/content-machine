@@ -45,6 +45,9 @@ source_role_rules:
   federal_register: official_record
   evergreen_ei6: primary_report
   evergreen_ei7: primary_report
+  # 自家技术报告：确实是 primary_report（一手、有章节坐标），但它是我们自己的。
+  # 独立性由 anchor_kind=owned_report 表达，不靠这里的优先级。
+  evergreen_ei9: primary_report
 
 x_watchlist:
   method: safe-social x user-posts
@@ -336,6 +339,27 @@ evergreen:
       capability_backing: technical_report
       signal_role: real_case
       axis: AX3_alternative_explanation_type
+    EI9_design_choice_from_report:
+      path: config/education_library.yml
+      collection: entries
+      # 这张表和上面两张的根本区别：锚不是第三方已发表记录，而是我们自己报告的一个章节。
+      # 所以它没有 standard_source 字段，anchor_field 指到 report_section 上，
+      # anchor_kind=owned_report 让终审和日报都知道这是自引，不是独立证据。
+      anchor_field: report_section
+      anchor_kind: owned_report
+      anchor_type: owned_report
+      # 条目讲的是我们自己的设计，没有学科归属；整张表放进自己的周配额桶，
+      # 不和 6 个科学学科抢 discipline_per_week。上限因此是 3 条/周。
+      discipline: apodex_capability
+      # 每期先给这张表留 1 个座位再轮换其余。没有这一条，46 条候选里
+      # 靠 day-ordinal 轮换决定谁出货，最需要每天出货的这张表恰好最容易一个座都拿不到。
+      reserved_per_run: 1
+      problem_shape_id: PS8_auditable_conclusion
+      thesis_id: T2_independent_verification
+      likely_column: C2
+      capability_backing: technical_report
+      signal_role: real_case
+      axis: AX4_who_checks
     # EI7（跨学科同构）暂未接入：它需要一张自己的母表，条目由 Selene 供料。
     # 母表建好后把下面这段取消注释即可，代码不用改。
     # EI7_cross_field_isomorphism:

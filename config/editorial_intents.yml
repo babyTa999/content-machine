@@ -162,3 +162,34 @@ intents:
         - '("same problem" OR "borrowed from" OR "transfers directly") (materials OR catalysis OR protein OR battery)'
         - '("structure-property" OR "high-dimensional search") (optimization OR design OR screening)'
 
+
+  # 唯一一条不需要外部世界发生任何事就能出货的选题理由。前八条全部要么等外部事件
+  # （EI1-EI5），要么锚在第三方已发表的记录上（EI6/EI8/EI7）。这一条锚在我们自己的
+  # 技术报告上：一个已确认的设计选择 + 一个可引用的数字，讲"我们为什么这样设计"。
+  # 因为锚是自家材料，它不构成独立证据 —— 硬闸门里的 boundary 字段就是为此存在。
+  EI9_design_choice_from_report:
+    name: "我们为什么这样设计：技术报告里一个已确认的设计选择，配一个可引用的数字"
+    status: active
+    intake: curated
+    intake_source: "config/education_library.yml"
+    columns: [C2]
+    problem_shapes: [PS7_branching_investigation, PS8_auditable_conclusion, PS10_missing_control]
+    theses:
+      - T2_independent_verification
+      - T3_asynchronous_verification
+      - T6_auditable_history
+      - T7_agent_level_scaling
+    event_triggers: []
+    source_types: [owned_material]
+    product_backing: [technical_report]
+    positive_examples:
+      - "技术报告里一个写明了的设计选择，配一个能被别人引用的数值或坐标，并说清这个数字不成立的边界"
+      - "一个我们主动放弃的做法，以及放弃它之后测出来的差别"
+    negative_examples:
+      - "只有主张没有数字（『我们更可靠』），或只有数字没有机制（贴一张成绩单）"
+      - "把自家评测结果写成行业公认结论 —— 锚是自家材料，必须在文案里标明来源"
+      - "对比类数字不标明对比的是哪一版对手 —— 对手更新后该说法即失效"
+      - "报告里标注 still in flight / 未完成的数字"
+    hard_gate_ref: "education_library.yml 五必填：claim / number（必须含阿拉伯数字）/ mechanism / report_section / boundary"
+    retrieval:
+      x_queries: []

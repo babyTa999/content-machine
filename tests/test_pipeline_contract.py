@@ -9,7 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from oracle import score
+from oracle import collect, score
 from oracle import collect
 
 
@@ -45,11 +45,27 @@ class ProductLedContractTest(unittest.TestCase):
         cls.intents = score.load_yaml(score.REPO / "config" / "editorial_intents.yml")
         cls.golden = score.load_yaml(score.REPO / "config" / "editorial_golden_set.yml")
 
+    @staticmethod
+    def _draws_on_external_world(definition: dict) -> bool:
+        """这条选题理由需不需要外部世界发生点什么。
+
+        除 owned_material 一种之外，所有 source_types 都指向外部世界，因此必须声明
+        event_triggers 并贡献一条检索 query——否则它会 active 着却永远拿不到候选
+        （历史 bug：intent 轮换漏了一条，那条就静默空转）。只锚自家材料的那条相反：
+        它不许有 triggers，否则等于把"等外部事件"偷偷加回一条本该无条件出货的产线。
+        """
+        return set(definition.get("source_types") or []) != {"owned_material"}
+
     def test_editorial_intents_and_golden_set_reference_valid_ids(self) -> None:
         intents = self.intents.get("intents") or {}
         for intent_id, definition in intents.items():
-            self.assertTrue(definition.get("event_triggers"), intent_id)
             self.assertTrue(definition.get("source_types"), intent_id)
+            if self._draws_on_external_world(definition):
+                self.assertTrue(definition.get("event_triggers"), intent_id)
+            else:
+                self.assertFalse(definition.get("event_triggers"), intent_id)
+                self.assertTrue(definition.get("intake_source"), intent_id)
+                self.assertEqual(definition.get("intake"), "curated", intent_id)
             self.assertTrue(definition.get("positive_examples"), intent_id)
             self.assertTrue(definition.get("negative_examples"), intent_id)
             self.assertTrue(definition.get("product_backing"), intent_id)
@@ -316,9 +332,18 @@ class ProductLedContractTest(unittest.TestCase):
             intent_id
             for intent_id, definition in self.intents["intents"].items()
             if definition.get("status") == "active"
+            and self._draws_on_external_world(definition)
         }
         self.assertEqual({intent_id for intent_id, _ in queries}, active)
         self.assertEqual(len(queries), len(active))
+        # 反向：只锚自家材料的那条不许出现在检索轮换里，否则会去外面抓一批和它无关的候选。
+        owned = {
+            intent_id
+            for intent_id, definition in self.intents["intents"].items()
+            if not self._draws_on_external_world(definition)
+        }
+        self.assertTrue(owned, "至少应有一条不依赖外部事件的选题理由")
+        self.assertFalse(owned & {intent_id for intent_id, _ in queries})
 
     def test_offline_cli_round_trip(self) -> None:
         with tempfile.TemporaryDirectory(prefix="apodex-contract-") as temp:
@@ -496,10 +521,14 @@ class EvergreenPipelineTest(unittest.TestCase):
                 str(library_cfg.get("collection") or "")
             ) or {}
             for entry_id, entry in entries.items():
-                anchor = entry.get("standard_source") or entry.get("evidence_anchor") or {}
-                if not anchor.get("locator"):
+                # 必须走 collect 的同一个解析函数：教育母表的锚是 report_section，
+                # 直接读 standard_source 会把整张表静默跳过，测试就变成空转。
+                anchor = collect._evergreen_anchor(entry, library_cfg)
+                if not (anchor.get("locator") or anchor.get("url")):
                     continue
                 if entry.get("verification_status") == "source_incomplete":
+                    continue
+                if str(entry.get("status") or "") in collect.BLOCKED_ENTRY_STATUS:
                     continue
                 pick = lambda field, default="": str(
                     entry.get(field) or library_cfg.get(field) or default
@@ -518,6 +547,103 @@ class EvergreenPipelineTest(unittest.TestCase):
                 )
                 checked += 1
         self.assertGreater(checked, 0, "常青母表一条可用条目都没有")
+
+    def _evergreen_days(self, days: int, start: str = "2026-08-01") -> list[list[dict]]:
+        """跑 N 天常青产线，每期都记用量，返回逐日选中的条目。"""
+        import datetime as dt
+
+        cfg = (score.load_yaml(score.REPO / "config" / "sources.yml") or {}).get("evergreen") or {}
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "state.sqlite"
+            saved = (collect.STATE_DB, score.STATE_DB)
+            collect.STATE_DB, score.STATE_DB = db, db
+            try:
+                out = []
+                first = dt.date.fromisoformat(start)
+                for offset in range(days):
+                    now = dt.datetime.combine(
+                        first + dt.timedelta(days=offset), dt.time(9, 0)
+                    )
+                    rows = collect.collect_evergreen(cfg, now)
+                    score.record_evergreen_usage(
+                        now.date().isoformat(),
+                        {row["candidate_id"]: row for row in rows},
+                        [
+                            {
+                                "candidate_id": row["candidate_id"],
+                                "decision": "keep",
+                                "primary_action": "original_post",
+                            }
+                            for row in rows
+                        ],
+                    )
+                    out.append([row["curated"] for row in rows])
+                return out
+            finally:
+                collect.STATE_DB, score.STATE_DB = saved
+
+    def test_education_library_actually_ships(self) -> None:
+        """行业教育母表接进产线了才算接进：14 天内必须真的出货，且落在 C2。"""
+        days = self._evergreen_days(14)
+        edu = [
+            cell
+            for day in days
+            for cell in day
+            if cell["intent_id"] == "EI9_design_choice_from_report"
+        ]
+        self.assertGreater(len(edu), 0, "行业教育母表 14 天一条都没出——等于没接进产线")
+        for cell in edu:
+            self.assertEqual(cell["decision"]["likely_column"], "C2")
+            self.assertEqual(cell["anchor_type"], "owned_report")
+
+    def test_owned_anchor_is_never_passed_off_as_independent_evidence(self) -> None:
+        """锚是自家报告时，必须显式标成自引，否则会被当成第三方证据引用。"""
+        anchor = collect._evergreen_anchor(
+            {"report_section": "§4.3 · §8.4"},
+            {"anchor_field": "report_section", "anchor_kind": "owned_report"},
+        )
+        self.assertEqual(anchor["locator"], "§4.3 · §8.4")
+        self.assertEqual(anchor["kind"], "owned_report")
+        self.assertIn("不是第三方", anchor["note"])
+        warning, freshness = collect._anchor_age_note({"anchor_type": "owned_report"}, None)
+        self.assertIsNotNone(warning, "自家锚必须带警告：对比类数字会随对手更新失效")
+        self.assertIn("owned_report", freshness)
+
+    def test_third_party_anchor_still_wins_over_the_library_fallback(self) -> None:
+        """已发表的锚优先：库级 anchor_field 只是兜底，不许覆盖真锚。"""
+        anchor = collect._evergreen_anchor(
+            {"standard_source": {"locator": "10.1371/journal.pmed.1000217"}, "report_section": "§1"},
+            {"anchor_field": "report_section", "anchor_kind": "owned_report"},
+        )
+        self.assertEqual(anchor["locator"], "10.1371/journal.pmed.1000217")
+        self.assertNotIn("kind", anchor)
+
+    def test_entry_needing_internal_work_never_ships(self) -> None:
+        """条目格式合法 ≠ 背后的活干完了。自我复核那条在真做完之前不许出货。"""
+        entries = (score.load_yaml(score.REPO / "config" / "education_library.yml") or {}).get(
+            "entries"
+        ) or {}
+        blocked = [
+            entry_id
+            for entry_id, entry in entries.items()
+            if str(entry.get("status") or "") in collect.BLOCKED_ENTRY_STATUS
+        ]
+        self.assertIn("EDU_self_audit_missing", blocked, "自我复核那条应标为未完成")
+        shipped = {
+            cell["entry_id"] for day in self._evergreen_days(21) for cell in day
+        }
+        for entry_id in blocked:
+            self.assertNotIn(entry_id, shipped)
+
+    def test_one_library_cannot_take_the_whole_batch(self) -> None:
+        """预留是地板不是天花板：留了座的库不许把当期名额全吃掉。"""
+        days = self._evergreen_days(21)
+        libraries = {
+            cell["intent_id"] for day in days for cell in day
+        }
+        self.assertGreaterEqual(len(libraries), 3, f"21 天只有 {libraries} 出货，轮换退化了")
+        used = [cell["entry_id"] for day in days for cell in day]
+        self.assertEqual(len(used), len(set(used)), "同一条目在冷却期内被重复选中")
 
     def test_curated_cell_skips_stage_one_but_keeps_its_decision(self) -> None:
         cell = {

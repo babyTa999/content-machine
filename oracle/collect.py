@@ -257,6 +257,13 @@ def _anchor_age_note(entry_curated: dict[str, Any], crossref_year: Any) -> tuple
             "它描述的是那一次调查的结果，不是当下的总体状态。",
             "case（案例，不可推广为当下状态）",
         )
+    if anchor_type == "owned_report":
+        return (
+            "锚是我们自己的报告，不是第三方证据：文案里必须写清数字出自我们自己的评测，"
+            "不得写成行业公认结论。对比类数字（跑赢某个基线）只在我们发布的那一版上成立，"
+            "对手更新后即失效——引用前先确认对比对象还是当时那一版。",
+            "owned_report（自家材料，非独立证据；对比类数字随对手更新失效）",
+        )
     if anchor_type != "measurement":
         return None, f"{anchor_type or 'standard'}（规范或机制，年份不构成时效风险）"
     if years is None:
@@ -1527,8 +1534,56 @@ def _days_before(reference: str, days: int) -> str:
     return (dt.date.fromisoformat(reference) - dt.timedelta(days=days)).isoformat()
 
 
+# An entry can be in the library and still not be publishable. The five-field gate
+# proves the entry is *well formed*; it says nothing about whether the work behind it
+# has been done. EDU_self_audit_missing is the case in point: it claims a self-review
+# we have not run, so shipping it would be the exact over-claim the entry warns about.
+BLOCKED_ENTRY_STATUS = frozenset({"needs_internal_work", "draft", "blocked"})
+
+
+def _evergreen_anchor(entry: dict[str, Any], library_cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolve the one anchor an entry is written against.
+
+    Third-party libraries carry a published anchor (DOI, standard, docket). A library
+    of our own design decisions has no external anchor and never will — its citable
+    coordinate is a section of our own report. That is a legitimate anchor for "why we
+    built it this way", but it is a self-citation, so it is labelled as one and never
+    passed off as independent evidence.
+    """
+    anchor = entry.get("standard_source") or entry.get("evidence_anchor") or {}
+    if anchor.get("locator") or anchor.get("url"):
+        return dict(anchor)
+    field = str(library_cfg.get("anchor_field") or "")
+    locator = str(entry.get(field) or "") if field else ""
+    if not locator:
+        return {}
+    return {
+        "locator": locator,
+        "kind": str(library_cfg.get("anchor_kind") or "owned_report"),
+        "note": "自家材料的坐标，不是第三方独立证据",
+    }
+
+
 def _evergreen_entry_text(entry_id: str, entry: dict[str, Any], intent_id: str) -> tuple[str, str]:
     """Build the title and body a judge reads. Never emits internal codenames."""
+    if intent_id == "EI9_design_choice_from_report":
+
+        def field(name: str) -> str:
+            # 母表里有的字段自带句号、有的不带，直接拼会出现「。。」
+            return str(entry.get(name) or "").strip().rstrip("。.")
+
+        title = field("claim") or entry_id
+        body = "".join(
+            f"{label}：{field(name)}。"
+            for label, name in (
+                ("主张", "claim"),
+                ("可引用的数字或坐标", "number"),
+                ("机制", "mechanism"),
+                ("报告位置", "report_section"),
+                ("边界（必须写进文案，不许省）", "boundary"),
+            )
+        )
+        return title, body
     if intent_id == "EI6_missing_control":
         title = f"{entry.get('reported_metric') or entry_id}：可能没有排除的替代解释"
         body = (
@@ -1607,7 +1662,14 @@ def collect_evergreen(cfg: dict[str, Any], now: dt.datetime) -> list[dict[str, A
         for entry_id, entry in entries.items():
             if not isinstance(entry, dict):
                 continue
-            discipline = str(entry.get("discipline") or "unspecified")
+            if str(entry.get("status") or "") in BLOCKED_ENTRY_STATUS:
+                continue
+            # A library whose entries share one subject (our own report) has no per-entry
+            # discipline; declaring it once at the library level keeps that whole library
+            # in its own weekly bucket instead of competing with the science disciplines.
+            discipline = str(
+                entry.get("discipline") or library_cfg.get("discipline") or "unspecified"
+            )
             # A library may declare its own cell granularity. Locking the whole
             # discipline wastes the axis grid: AX3 x AX1 is 72 cells, but keying on
             # discipline alone collapses that to 6.
@@ -1619,7 +1681,7 @@ def collect_evergreen(cfg: dict[str, Any], now: dt.datetime) -> list[dict[str, A
             # No reachable anchor means the hard gate is unmet: the entry cannot be
             # written without inventing the source. Skip rather than emit a cell
             # whose evidence the judge has no way to check.
-            anchor = entry.get("standard_source") or entry.get("evidence_anchor") or {}
+            anchor = _evergreen_anchor(entry, library_cfg)
             if not (anchor.get("locator") or anchor.get("url")):
                 continue
             if str(entry.get("verification_status") or "") == "source_incomplete":
@@ -1632,6 +1694,7 @@ def collect_evergreen(cfg: dict[str, Any], now: dt.datetime) -> list[dict[str, A
                     "library_cfg": library_cfg,
                     "discipline": discipline,
                     "cell_key": cell_key,
+                    "anchor": anchor,
                 }
             )
         _health(f"evergreen:{intent_id}", ok=True, count=len(entries))
@@ -1642,21 +1705,62 @@ def collect_evergreen(cfg: dict[str, Any], now: dt.datetime) -> list[dict[str, A
     # re-pick the same head entry, and a same-day rerun stays reproducible.
     # Cooldowns only look at previous days, so the within-batch spread is enforced
     # here — otherwise one run happily emits two cells from the same grid square.
-    start = now.date().toordinal() % len(pool)
+    # Rotate each library over its own entries, then interleave. One index walking a
+    # pool that is concatenated library-by-library makes library choice a slow-moving
+    # block: consecutive days stay inside whichever library the index is currently
+    # sitting in, so a 21-day window can miss a 21-entry library entirely, and a
+    # reserved slot re-picks that library's first entry every time the index is below it.
+    ordinal = now.date().toordinal()
+    by_library: dict[str, list[dict[str, Any]]] = {}
+    for item in pool:
+        by_library.setdefault(item["intent_id"], []).append(item)
+    rotated = {
+        intent_id: [items[(ordinal + i) % len(items)] for i in range(len(items))]
+        for intent_id, items in by_library.items()
+    }
+    cursor = {intent_id: 0 for intent_id in rotated}
     selected: list[dict[str, Any]] = []
     batch_cells: set[str] = set()
     batch_disciplines = Counter(week_disciplines)
-    for offset in range(len(pool)):
-        if len(selected) >= per_run:
+
+    def take_from(intent_id: str, count: int) -> None:
+        # A library can be absent from the pool entirely: every entry cooled down, or
+        # its weekly cap already met. That is a normal day, not an error.
+        items = rotated.get(intent_id) or []
+        cursor.setdefault(intent_id, 0)
+        taken = 0
+        while taken < count and cursor[intent_id] < len(items):
+            item = items[cursor[intent_id]]
+            cursor[intent_id] += 1
+            if len(selected) >= per_run:
+                return
+            if item["cell_key"] in batch_cells:
+                continue
+            if batch_disciplines.get(item["discipline"], 0) >= discipline_cap:
+                continue
+            selected.append(item)
+            batch_cells.add(item["cell_key"])
+            batch_disciplines[item["discipline"]] += 1
+            taken += 1
+
+    # A library can reserve slots, filled before anyone else. Without this, rotation
+    # alone decides who ships, and the library that most needs to ship every day is
+    # exactly the one that can lose every slot to a larger neighbour. The reservation is
+    # a floor, not a cap — the weekly discipline cap still limits how often it appears.
+    libraries = list((cfg.get("libraries") or {}).items())
+    for intent_id, library_cfg in libraries:
+        reserved = int(library_cfg.get("reserved_per_run") or 0)
+        if reserved > 0:
+            take_from(intent_id, reserved)
+    # Remaining slots go round-robin so one library cannot take the whole batch.
+    while len(selected) < per_run:
+        before = len(selected)
+        for intent_id, _ in libraries:
+            if len(selected) >= per_run:
+                break
+            take_from(intent_id, 1)
+        if len(selected) == before:
             break
-        item = pool[(start + offset) % len(pool)]
-        if item["cell_key"] in batch_cells:
-            continue
-        if batch_disciplines.get(item["discipline"], 0) >= discipline_cap:
-            continue
-        selected.append(item)
-        batch_cells.add(item["cell_key"])
-        batch_disciplines[item["discipline"]] += 1
 
     output: list[dict[str, Any]] = []
     for item in selected:
@@ -1667,7 +1771,7 @@ def collect_evergreen(cfg: dict[str, Any], now: dt.datetime) -> list[dict[str, A
         def pick(field: str, fallback: str = "") -> str:
             return str(entry.get(field) or library_cfg.get(field) or fallback)
 
-        anchor = entry.get("standard_source") or entry.get("evidence_anchor") or {}
+        anchor = item["anchor"]
         locator = str(anchor.get("locator") or "")
         url = str(anchor.get("url") or "")
         if not url and locator.startswith("10."):
@@ -1718,7 +1822,11 @@ def collect_evergreen(cfg: dict[str, Any], now: dt.datetime) -> list[dict[str, A
                     "discipline": item["discipline"],
                     "cell_key": item["cell_key"],
                     "anchor": anchor,
-                    "anchor_type": entry.get("anchor_type") or "standard",
+                    "anchor_type": (
+                        entry.get("anchor_type")
+                        or library_cfg.get("anchor_type")
+                        or ("owned_report" if anchor.get("kind") else "standard")
+                    ),
                     "measured_window": entry.get("measured_window"),
                     "verification_status": entry.get("verification_status"),
                     "numbers_to_verify": entry.get("numbers_to_verify") or [],
