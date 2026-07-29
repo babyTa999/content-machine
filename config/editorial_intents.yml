@@ -116,6 +116,30 @@ intents:
         - '("reporting standard" OR "reporting guidelines" OR "author checklist") (journal OR editors OR required)'
         - '("round robin" OR "interlaboratory") (reproducibility OR variability OR protocol)'
 
+  EI8_verification_role_gap:
+    name: "某一类检查者系统性漏掉了什么，或漏掉之后代价落在谁身上"
+    status: active
+    intake: curated
+    intake_source: config/checker_library.yml
+    columns: [C1, C2]
+    problem_shapes: [PS8_auditable_conclusion, PS9_source_collapse, PS10_missing_control]
+    theses: [T2_independent_verification, T5_source_diversity, T6_auditable_history]
+    event_triggers: [peer review study, replication study, citation network analysis, cost of irreproducibility, outcome switching, reporting discrepancy, correction of the record]
+    source_types: [primary_research, scientific_institution, standards_body]
+    product_backing: [technical_report]
+    positive_examples:
+      - "一份已发表研究量化了某一类检查环节的检出率、遗漏率或纠错渠道的实际通过率"
+      - "一份已发表分析量化了结论不可靠之后由谁承担、承担多少（成本核算或成功率估计）"
+    negative_examples:
+      - "泛泛讨论同行评议不可靠、复现性危机或学术界体制问题（docs/01 排除边界已明文排除）"
+      - "任何指向具体研究者、具体实验室或具体论文的诚信指控（pillars.yml exclude 硬拦）"
+      - "以研究不当行为 / fraud 为主题的材料——已排除赛道，即使结构上贴题也不收"
+    hard_gate_ref: "checker_library.yml 六必填：checker / systematic_gap / documented_finding / evidence_anchor / problem_shape_id / thesis_id"
+    retrieval:
+      x_queries:
+        - '("peer review" OR "replication") ("detection rate" OR "how many" OR "failed to detect")'
+        - '("cost of" OR "wasted") ("irreproducible" OR "unreliable") research'
+
   EI7_cross_field_isomorphism:
     name: "两个学科的难题在计算范式上是同一个问题"
     status: active

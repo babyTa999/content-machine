@@ -280,7 +280,7 @@ capability_backing:
 
 actions:
   original_post:
-    platforms: [x, reddit, rss, web]
+    platforms: [x, reddit, rss, web, curated]
   x_reply:
     platforms: [x]
   x_quote:
@@ -288,7 +288,7 @@ actions:
   reddit_reply:
     platforms: [reddit]
   watch:
-    platforms: [x, reddit, rss, web]
+    platforms: [x, reddit, rss, web, curated]
 
 # Deterministic exclusions are intentionally narrow. The Judge handles semantic
 # exclusions such as competitor launches and paper-only material.

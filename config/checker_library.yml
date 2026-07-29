@@ -1,0 +1,379 @@
+schema_version: 1
+
+# 检查者与代价母表 —— EI8_verification_role_gap 的唯一选题来源。
+#
+# 覆盖两根轴（axes.yml）：
+#   AX4_who_checks         谁在检查——母问题「除了做出它的人，还有谁检查过」的直接展开
+#   AX6_who_pays_for_error 错了谁付钱——情绪最强的一轴
+#
+# 为什么这两根轴要单独一张表：
+#   AX3（替代解释）问的是「这个结果还有别的解释吗」，锚是一份 reporting standard。
+#   AX4 / AX6 问的是「谁本该抓住它、抓住了吗」和「漏掉之后谁承担」，锚不是标准，
+#   而是一份已公开发表的、量化了这个缺口或这笔代价的研究。
+#
+# 硬准入（七必填，缺一即拒）：
+#   checker / systematic_gap / documented_finding / evidence_anchor /
+#   problem_shape_id / thesis_id / anchor_type
+#
+# anchor_type 决定这条锚有没有保鲜期，三个取值纪律完全不同：
+#   standard    —— 规范或机制原理，年份不构成风险，照常写。
+#   measurement —— 现实世界的比例 / 速率 / 成本估算，**有保鲜期**。
+#                  必须同时写 measured_window；enrichment 会算锚龄并警告判官；
+#                  散文里必须写清测量时点，绝不许写成当下状态。
+#   case        —— 一次已完成的具体调查。案例不过期，但不得推广成「现在普遍如此」。
+#
+# 本表绝大多数条目是 measurement——量化某个检查缺口的研究天然是某时点的快照。
+# 这也是本表最大的翻车风险：2018–2019 年测得的合规率曾被直接写成当下状态，
+# 而监管方后来的执法动作已经改变了图景。闸门见 collect.py `_anchor_age_note`。
+#   `documented_finding` 必须含锚里的具体数字或具体结论，不许写成泛泛结论——
+#   这一条使本表无法退化成「同行评议不可靠」这类复现性泛叙事
+#   （docs/01-选题哲学.md 排除边界已明文排除）。
+#
+# 每条自带 problem_shape_id / thesis_id：同一张表里形状不同。
+#   引用坍缩是 PS9 + T5，审稿漏检是 PS8 + T2，代价类是 PS8 + T6。
+#   collect.py 的条目级覆盖会用条目里的值，不用 sources.yml 的默认值。
+#
+# 红线：
+#   1. **绝不点名指控任何研究者、实验室或具体论文**。写的是某一类检查环节的
+#      结构性缺口，不是「某人骗人」。pillars.yml exclude 硬拦 academic misconduct /
+#      paper mill / plagiarism allegation / peer review fraud。
+#   2. 因此本表刻意**不收**以研究不当行为（fraud / misconduct）为主题的锚，
+#      即使它在结构上很贴题——那是已排除赛道，且极易滑向指控个人。
+#   3. AX6 的 `patients`（病人付钱）暂缺条目：拿病人受害做内容风险过高，
+#      且难以在不指向具体研究的前提下写清楚。要做需 Selene 单独定口径。
+#   4. 全部 evidence_anchor 的 DOI 已于 2026-07-28 在 Crossref 逐条核到
+#      作者 / 年份 / 期刊 / 卷期页，`verification_status: verified` 指的是**引证本身**
+#      已核；`numbers_to_verify` 里的具体表述仍需在 draft 阶段回原文确认。
+
+# AX6 的 `yourself`（自己付钱）暂缺条目：在不碰研究不当行为这条已排除赛道的前提下，
+# 找不到一份公开量化「结论错了之后作者本人承担多少」的研究。宁缺勿编。
+checkers:
+  yourself: "你自己"
+  collaborator: "合作者"
+  anonymous_reviewer: "匿名审稿人"
+  journal_editor: "期刊编辑"
+  replicator: "复现者"
+  regulator: "监管者"
+  downstream_citer: "下游引用者"
+  someone_who_distrusts_you: "一个不信你的人"
+
+cost_bearers:
+  yourself: "自己"
+  downstream_labs: "下游实验室"
+  patients: "病人"
+  investors: "投资人"
+
+entries:
+
+  # ============ AX4 谁在检查 ============
+
+  CK_self_analytic_freedom:
+    title: "你自己检查自己：分析路径的自由度足够让任何假设看起来成立"
+    checker: "你自己"
+    cell: yourself
+    systematic_gap: |
+      自查最难发现的不是算错，而是「在多条都合理的分析路径里，
+      挑中了让结果显著的那一条」——每一步单看都站得住，合起来把假阳性率抬上去了。
+    documented_finding: |
+      该研究用模拟与两个真实实验证明：在数据收集与分析中未披露的灵活性下，
+      名义 0.05 的假阳性率可被推高到远超该水平，足以为一个错误假设攒出统计显著的证据。
+      作者给出的处置是披露式方案：对作者六条要求、对审稿人四条指引。
+    evidence_anchor:
+      type: primary_research
+      title: "False-Positive Psychology: Undisclosed Flexibility in Data Collection and Analysis Allows Presenting Anything as Significant"
+      venue: "Psychological Science"
+      year: 2011
+      locator: "10.1177/0956797611417632"
+      citation: "Simmons JP, Nelson LD, Simonsohn U. Psychological Science. 2011;22(11):1359-1366"
+      access: paywalled
+    problem_shape_id: PS8_auditable_conclusion
+    thesis_id: T2_independent_verification
+    axis: AX4_who_checks
+    anchor_type: standard
+    verification_status: verified
+    numbers_to_verify:
+      - "对作者的六条披露要求与对审稿人的四条指引的原文表述"
+      - "论文中假阳性率被推高到的具体数值区间"
+    operator_fit: [OP1_constant_falsified]
+
+  CK_reviewer_error_detection:
+    title: "匿名审稿人：故意插进去的重大方法学错误，平均只被找出不到三分之一"
+    checker: "匿名审稿人"
+    cell: anonymous_reviewer
+    systematic_gap: |
+      审稿被当成质量闸门，但它对「方法学错误」的实际检出率是可测的，而且低于多数人的预期。
+      更关键的是：培训能带来的改善很小，且不持久。
+    documented_finding: |
+      607 名审稿人被随机分入两个培训组与一个对照组，每人先后收到同样三篇测试稿，
+      每篇都被插入 9 个重大与 5 个次要方法学错误。基线那篇平均只找出 9 个重大错误中的 2.58 个，
+      第二、三篇分别为 2.71 与 3.0，组间无显著差异。被检出最多的是随机化偏倚。
+    evidence_anchor:
+      type: primary_research
+      title: "What errors do peer reviewers detect, and does training improve their ability to detect them?"
+      venue: "Journal of the Royal Society of Medicine"
+      year: 2008
+      locator: "10.1258/jrsm.2008.080062"
+      citation: "Schroter S, Black N, Evans S, Godlee F, Osorio L, Smith R. J R Soc Med. 2008;101(10):507-514"
+      access: open
+    problem_shape_id: PS8_auditable_conclusion
+    thesis_id: T2_independent_verification
+    axis: AX4_who_checks
+    anchor_type: measurement
+    measured_window: "研究执行期未在摘要中明确；发表于 2008"
+    verification_status: verified
+    numbers_to_verify:
+      - "9 个重大错误 / 5 个次要错误的插入设计与基线 2.58 的原文表述"
+      - "培训效应在六个月随访后是否仍存在的原文结论"
+    operator_fit: [OP1_constant_falsified, OP8_primary_document_raid]
+
+  CK_editor_correction_channel:
+    title: "期刊编辑：把预设终点被换掉这件事写信告诉期刊之后，多数信没有下文"
+    checker: "期刊编辑"
+    cell: journal_editor
+    systematic_gap: |
+      发现问题之后的纠错渠道本身也是一道检查环节。如果纠正记录进不去，
+      读者看到的仍然是原来那个版本——错误没有被修掉，只是被写进了信箱。
+    documented_finding: |
+      该前瞻性队列研究实时监测五家顶级医学期刊的试验报告，比对方案/注册记录与发表版本，
+      在 67 个试验中只有 9 个终点报告完全正确；其余 58 个存在终点被换掉、未报告或静默修改，
+      共 301 个预设终点未被报告、357 个未预设终点被加入。团队为这 58 个试验各写一封纠错信，
+      其中 6 封被发表、16 封被拒、36 封在寄出四周后既未发表也未被拒。
+    evidence_anchor:
+      type: primary_research
+      title: "COMPare: a prospective cohort study correcting and monitoring 58 misreported trials in real time"
+      venue: "Trials"
+      year: 2019
+      locator: "10.1186/s13063-019-3173-2"
+      citation: "Goldacre B, Drysdale H, Dale A, et al. Trials. 2019;20(1)"
+      access: open
+    problem_shape_id: PS8_auditable_conclusion
+    thesis_id: T6_auditable_history
+    axis: AX4_who_checks
+    anchor_type: measurement
+    measured_window: "COMPare 监测期，2015-2016（需回原文确认）"
+    verification_status: verified
+    numbers_to_verify:
+      - "67 / 9 / 58 / 301 / 357 与 6-16-36 封信的分布，逐个回原文核"
+      - "被监测的五家期刊名单与监测时间窗"
+    operator_fit: [OP8_primary_document_raid]
+
+  CK_replicator_gap:
+    title: "复现者：一个跑了八年的复现项目，最后能重做的实验比原计划少得多"
+    checker: "复现者"
+    cell: replicator
+    systematic_gap: |
+      「让别人重做一遍」听起来是最硬的检查，但它先撞上一个更早的问题：
+      原始论文里的方法细节、试剂来源与原始数据常常不足以让人把实验重新搭起来。
+      检查失败不总是因为结论错，也可能因为根本没法开始检查。
+    documented_finding: |
+      该项目重做了 23 篇高影响力前临床癌症生物学论文中的 50 个实验，
+      并对全部实验做了合并的元分析；配套论文同时报告了在重做过程中遇到的障碍
+      与未能完成的注册报告。
+    evidence_anchor:
+      type: primary_research
+      title: "Investigating the replicability of preclinical cancer biology"
+      venue: "eLife"
+      year: 2021
+      locator: "10.7554/eLife.71601"
+      citation: "Errington TM, Mathur M, Soderberg CK, et al. eLife. 2021;10:e71601"
+      access: open
+    problem_shape_id: PS8_auditable_conclusion
+    thesis_id: T6_auditable_history
+    axis: AX4_who_checks
+    anchor_type: case
+    verification_status: verified
+    numbers_to_verify:
+      - "23 篇论文 / 50 个实验的确切口径，以及原计划篇数与最终完成数的差"
+      - "元分析的合并效应量结论原文表述"
+      - "『方法细节不足以复现』这一障碍在论文中的具体表述"
+    operator_fit: [OP8_primary_document_raid]
+
+  CK_downstream_citer_collapse:
+    title: "下游引用者：两百多篇论文、六百多次引用，最后撑的是同一个未被证实的说法"
+    checker: "下游引用者"
+    cell: downstream_citer
+    systematic_gap: |
+      被大量引用常被当成「已被反复检查」的代理。但引用网络可以在没有新数据的情况下
+      自我放大：不利证据被绕开，假设通过反复引用变成事实。引用数越多，
+      反而越掩盖了这些引用其实回到同一个源头。
+    documented_finding: |
+      该研究对一个具体生物医学信念构建了完整引用网络：242 篇论文、675 次引用，
+      其中支撑该信念的引用路径有 220,553 条。作者识别出三种机制：
+      对反驳性论文的引用偏倚、由不含相关数据的论文造成的放大、
+      以及仅凭引用把假设转化为事实的「发明」。
+    evidence_anchor:
+      type: primary_research
+      title: "How citation distortions create unfounded authority: analysis of a citation network"
+      venue: "BMJ"
+      year: 2009
+      locator: "10.1136/bmj.b2680"
+      citation: "Greenberg SA. BMJ. 2009;339:b2680"
+      access: open
+    problem_shape_id: PS9_source_collapse
+    thesis_id: T5_source_diversity
+    axis: AX4_who_checks
+    anchor_type: case
+    verification_status: verified
+    numbers_to_verify:
+      - "242 / 675 / 220,553 三个数字与各自口径"
+      - "bias / amplification / invention 三种机制的原文定义"
+    operator_fit: [OP2_term_inflation_audit, OP8_primary_document_raid]
+
+  CK_distrustful_outsider:
+    title: "一个不信你的人：他要做的第一件事，是把你写的方案和你发表的结果并排放"
+    checker: "一个不信你的人"
+    cell: someone_who_distrusts_you
+    systematic_gap: |
+      前面几类检查者都在体系内、都有别的事要忙。真正会逐字比对方案与结果的，
+      往往是一个专门为此而来、且预设你可能没写全的外部人。
+      这类检查一旦发生，检出率远高于常规审稿——它也说明常规环节漏了什么。
+    documented_finding: |
+      同一个前瞻性监测项目显示：当有人专门逐个比对注册方案与发表报告时，
+      67 个试验里 58 个被查出终点报告不一致。这不是抽样估计，是逐篇比对的结果。
+    evidence_anchor:
+      type: primary_research
+      title: "COMPare: a prospective cohort study correcting and monitoring 58 misreported trials in real time"
+      venue: "Trials"
+      year: 2019
+      locator: "10.1186/s13063-019-3173-2"
+      citation: "Goldacre B, Drysdale H, Dale A, et al. Trials. 2019;20(1)"
+      access: open
+    problem_shape_id: PS8_auditable_conclusion
+    thesis_id: T2_independent_verification
+    axis: AX4_who_checks
+    anchor_type: measurement
+    measured_window: "COMPare 监测期，2015-2016（需回原文确认）"
+    verification_status: verified
+    numbers_to_verify:
+      - "67 / 58 的口径，以及逐篇比对而非抽样这一方法学表述"
+    operator_fit: [OP8_primary_document_raid]
+
+  CK_collaborator_many_analysts:
+    title: "合作者：29 个团队拿同一份数据回答同一个问题，结论并不一致"
+    checker: "合作者 / 另一位独立分析同一份数据的人"
+    cell: collaborator
+    systematic_gap: |
+      「让组里另一个人也算一遍」被当成互查，但如果两人各自都要做十几个合理的分析选择，
+      两个诚实的人算出不同结论是常态，不是异常。互查能发现算错，
+      发现不了「这份数据能支持好几个不同结论」。
+    documented_finding: |
+      29 个团队、61 名分析者拿同一份数据集回答同一个研究问题。
+      估计效应量在比值比单位上从 0.89 到 2.93，中位数 1.31；
+      20 个团队（69%）得到统计显著的正向效应，9 个团队（31%）得到不显著结果；
+      29 份分析用了 21 种不同的协变量组合。作者指出：分析者的先验信念与专业水平
+      都解释不了这些差异。
+    evidence_anchor:
+      type: primary_research
+      title: "Many Analysts, One Data Set: Making Transparent How Variations in Analytic Choices Affect Results"
+      venue: "Advances in Methods and Practices in Psychological Science"
+      year: 2018
+      locator: "10.1177/2515245917747646"
+      citation: "Silberzahn R, Uhlmann EL, Martin DP, et al. Adv Methods Pract Psychol Sci. 2018;1(3):337-356"
+      access: open
+    problem_shape_id: PS8_auditable_conclusion
+    thesis_id: T2_independent_verification
+    axis: AX4_who_checks
+    anchor_type: case
+    verification_status: verified
+    numbers_to_verify:
+      - "29 团队 / 61 分析者 / OR 0.89–2.93 / 中位 1.31 / 20 对 9 / 21 种协变量组合"
+      - "『先验信念与专业水平都解释不了差异』的原文表述"
+    operator_fit: [OP1_constant_falsified]
+
+  CK_regulator_reporting_compliance:
+    title: "监管者：法律规定到期必须上报结果，实际到期上报的情况远不理想"
+    checker: "监管者"
+    cell: regulator
+    systematic_gap: |
+      监管者常被当成最后一道硬闸门——它有法律授权。但「有要求」和「要求被遵守」
+      是两件事，而后者是可以逐条查、可以量化的。检查者存在不等于检查发生。
+    documented_finding: |
+      该队列研究覆盖依据 FDAAA 2007 最终规则到期须在 ClinicalTrials.gov 上报结果的全部试验
+      （首批于 2018 年 1 月到期），逐个核对是否按期上报。结论是合规情况不佳，
+      作者指出这可能源于监管方执法不力。
+    evidence_anchor:
+      type: primary_research
+      title: "Compliance with legal requirement to report clinical trial results on ClinicalTrials.gov: a cohort study"
+      venue: "The Lancet"
+      year: 2020
+      locator: "10.1016/S0140-6736(19)33220-9"
+      citation: "DeVito NJ, Bacon S, Goldacre B. Lancet. 2020;395(10221):361-369"
+      access: paywalled
+    problem_shape_id: PS8_auditable_conclusion
+    thesis_id: T6_auditable_history
+    axis: AX4_who_checks
+    anchor_type: measurement
+    measured_window: "2018-03 至 2019-09"
+    verification_status: verified
+    numbers_to_verify:
+      - "按期上报的具体比例与分母口径（哪些试验被纳入到期范围）"
+      - "『执法不力』这一归因在原文中的确切措辞——不要写成对某个机构的指控"
+      - "FDAAA 2007 最终规则首批到期时间 2018 年 1 月"
+    operator_fit: [OP7_compliance_clock_recompute, OP8_primary_document_raid]
+
+  # ============ AX6 错了谁付钱 ============
+
+  CK_cost_downstream_labs:
+    title: "下游实验室付钱：建立在不可复现结果上的后续研究，代价已经被算过一次"
+    checker: "下游实验室（在别人结论之上继续做的人）"
+    cost_borne_by: "下游实验室"
+    cell: downstream_labs
+    systematic_gap: |
+      一个不可靠的结论最贵的地方不在它本身，而在有多少人把它当地基。
+      承担代价的不是发表它的人，是后面按它设计实验、订试剂、写基金的实验室。
+    documented_finding: |
+      该经济学分析估算：仅在美国，每年约有 280 亿美元花在不可复现的前临床研究上；
+      累积的不可复现比例超过 50%。文中指出占比最大的成因是有问题的生物试剂与参考材料，
+      例如被污染或被误认的细胞系。
+    evidence_anchor:
+      type: institutional_update
+      title: "The Economics of Reproducibility in Preclinical Research"
+      venue: "PLOS Biology"
+      year: 2015
+      locator: "10.1371/journal.pbio.1002165"
+      citation: "Freedman LP, Cockburn IM, Simcoe TS. PLoS Biol. 2015;13(6):e1002165"
+      access: open
+    problem_shape_id: PS8_auditable_conclusion
+    thesis_id: T6_auditable_history
+    axis: AX6_who_pays_for_error
+    anchor_type: measurement
+    measured_window: "2015 年发表的年度成本估算"
+    verification_status: verified
+    numbers_to_verify:
+      - "280 亿美元/年的口径：是否仅限美国、仅限前临床、以何年为基准"
+      - "『累积不可复现比例超过 50%』的测算方法"
+      - "试剂与参考材料占成因比例的具体数字"
+    operator_fit: [OP5_incentive_misalignment_audit]
+
+  CK_cost_investors:
+    title: "投资人付钱：进了临床的药物开发项目，最终获批的不到七分之一"
+    checker: "投资人 / 出钱决定做哪个项目的人"
+    cost_borne_by: "投资人"
+    cell: investors
+    systematic_gap: |
+      在最前面那一步——「这个前临床结论值不值得押上一个开发项目」——做判断的人，
+      拿到的证据往往是最薄的。等到不成立，钱已经花完了，而失败率是可以被量化的。
+    documented_finding: |
+      该研究用 2000 年 1 月至 2015 年 10 月间 21,143 个化合物、406,038 条临床试验记录估算：
+      13.8% 的药物开发项目最终获批。这一数字高于此前文献报告的 10.4% 与 9.6%，
+      作者同时给出按疾病类型、临床阶段、申办方类型与是否有生物标记物拆分的分项估计。
+    evidence_anchor:
+      type: primary_research
+      title: "Estimation of clinical trial success rates and related parameters"
+      venue: "Biostatistics"
+      year: 2019
+      locator: "10.1093/biostatistics/kxx069"
+      citation: "Wong CH, Siah KW, Lo AW. Biostatistics. 2019;20(2):273-286"
+      access: open
+    problem_shape_id: PS8_auditable_conclusion
+    thesis_id: T6_auditable_history
+    axis: AX6_who_pays_for_error
+    anchor_type: measurement
+    measured_window: "2000-01 至 2015-10"
+    verification_status: verified
+    numbers_to_verify:
+      - "13.8% 的口径（是否含全部阶段、以项目还是化合物为单位）"
+      - "21,143 / 406,038 两个样本量数字"
+      - "与 Hay 2014 的 10.4%、Thomas 2016 的 9.6% 的可比性"
+      - "该文有一份 2019 年勘误（Biostatistics 20(2):366），需确认勘误内容是否影响引用的数字"
+    operator_fit: [OP5_incentive_misalignment_audit]

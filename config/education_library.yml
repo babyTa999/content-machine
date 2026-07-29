@@ -1,0 +1,327 @@
+schema_version: 1
+
+# 行业教育母表 —— 内部资产驱动的选题库（Selene 2026-07-29 定为新主力产线）
+#
+# 为什么建这张表：
+#   此前 content-machine 的主力是"外部决策窗口雷达"（Federal Register 征求意见）。
+#   实测这类选题在 Epoch AI 164 条、Ambient 81 条、我们自己 59 条里**三边都是 0**。
+#   而我们表现最好的历史内容全是 product-aware：发布帖 B359、Frontier Program V37万。
+#   依据见 内容/竞品brain.md §6.4。
+#
+# 抄的是 Epoch AI 的选题引擎（竞品brain.md §6.1）：
+#   它 164 条里外部事件驱动只有 1 条，其余全是"我们测了什么/算了什么/修了自己什么错"。
+#   选题不是找来的，是自有基建产出的。我们的基建就是这份技术报告 + RBE + 自我验证。
+#
+# 硬准入（五必填，缺一即拒）：
+#   claim / number / mechanism / report_section / boundary
+#   **number 是这张表的命门**：Epoch 无一条例外，每条都带一个可引用的数字或坐标。
+#   没有数字的条目只是概念科普，进不了库——这是 Selene 2026-07-29 明确定的闸门。
+#
+# number 的两种合法形态：
+#   metric    —— 一个可被引用的数值（87.4 / +18.4 / 三倍）
+#   coordinate—— 一个可被引用的坐标或结构（五个扩展点 / 三个验证角色 / 41 道题）
+#
+# 红线：
+#   1. **不把 benchmark 写成科学能力的直接证明**（RULES.md 对外红线第 4 条）。
+#      报告里的分数只能写成"在这个 benchmark 的这个口径下"，不能写成"所以我们能做科学发现"。
+#   2. 不承诺 access / API / pricing / CTA —— 那要 owner 确认口径。
+#   3. 对外用 we/our 第一人称，不把品牌名当第三人称主语。
+#   4. 点名竞品模型只报数字不评判（学 Epoch），且遵 watchlist.yml content_rules 的竞品红线。
+#
+# 用法：一条条目 = 一条 X 主帖（+ poster）。形态按 forms.yml，写法按 竞品brain.md §2 的
+#   Epoch 三段骨架：结论式断言（带数字）→ 口径说明 → 图。
+
+number_types:
+  metric: "一个可被引用的数值"
+  coordinate: "一个可被引用的坐标或结构"
+
+audiences:
+  pi: "学术 PI / 实验室负责人（战略文件 A2：只做学术 PI，不做企业）"
+  institution: "机构决策人（TTO、科研资助基金会 —— roadmap 主力客户）"
+  engineer: "AI/agent 工程师（官号可发，但工程细节向优先走老板个人号）"
+
+entries:
+
+  # ================= 最强的一组：GVR 与自我验证 =================
+
+  EDU_gvr_advanced_tripling:
+    claim: "在最难的那档数学证明题上，让模型自己评自己再改，分数接近翻了三倍。"
+    number: "12.38 → 34.29"
+    number_type: metric
+    mechanism: |
+      IMO-ProofBench 的 Advanced 子集（30 道新题，IMO-Hard 难度），每题按参考解与
+      题目专属 rubric 打 0–7 分，官方指标是占总可能分的百分比。generate–verify–revise
+      跑 10 轮 rollout，Advanced 从 12.38 升到 34.29；Basic 从 49.05 升到 80.48
+      （+31.4 绝对，+64% 相对）；全 60 题合计 30.71 → 57.38（+87% 相对）。
+    report_section: "§4.3 Math Verification via Generate–Verify–Revise · §8.4 Table 7"
+    poster: "Basic / Advanced / Overall 三组前后对比柱状图，Advanced 那根标出接近三倍"
+    boundary: |
+      这是 IMO-ProofBench 这一个 benchmark 的分数，不是"我们会证明数学定理"。
+      Apodex-1.0（397B）的数字报告里标注 still in flight，不要引用未完成的数。
+    audience: [pi, engineer]
+    form: mid_post
+
+  EDU_grader_never_sees_answer:
+    claim: "我们刻意不让打分的那一环看到参考答案——泄露给它，分数会虚高，而不是模型变好。"
+    number: "0 次看到参考答案与 rubric"
+    number_type: coordinate
+    mechanism: |
+      GVR 的 in-loop grader 是同一个模型，只拿到题目和候选证明，给 0–7 分加一段书面
+      批评。技术报告原句："A deliberate design choice is that the in-loop grader is
+      never shown the reference solution or the rubric: leaking either turns the
+      grader into an oracle and inflates apparent scores." 所以 §8.4 的增益
+      "comes purely from the model's ability to score and steer its own proofs
+      across rounds—not from oracle access"。
+    report_section: "§4.3 · §8.4"
+    poster: "两条流程对比：给 grader 看答案（分数虚高）vs 不给（真实增益）"
+    boundary: "讲的是评测设置的诚实性，不是「我们的分数比别人干净」——别人的设置我们没查。"
+    audience: [pi, engineer]
+    form: short_assertion
+
+  EDU_self_audit_missing:
+    claim: "我们做验证，却还没公开验证过自己。"
+    number: "0 份公开的自我复核报告"
+    number_type: coordinate
+    mechanism: |
+      Epoch AI 用"我们复核了自己的 FrontierMath，约三分之一的题有致命错误"拿到
+      B193，用"修正了 42% 的题"拿到 B95，连 ECI 置信区间的代码 bug 都发了 5 条
+      讲清怎么产生的。对一家做 verification 的公司，公开自己的纠错过程是最强的
+      产品证明。我们有 Hard Deep Research（41 题）与全部 benchmark 口径，可以做
+      同样的事。
+    report_section: "§9 Internal Evaluation（对照 竞品brain.md §6.1）"
+    poster: "自我复核的流程图：谁复核、复核什么、发现什么、改了什么"
+    boundary: |
+      **这条是待办不是已完成**：发之前必须真的做过一次自我复核并有可公布的结果。
+      不许把"我们打算做"写成"我们做了"。
+    audience: [pi, institution]
+    form: mid_post
+    status: needs_internal_work
+
+  # ================= Agent team 与单 agent 天花板 =================
+
+  EDU_react_ceiling:
+    claim: "单 agent 的 ReAct 循环有个天花板，加参数和加 context 都撞不破——因为天花板在它们下面。"
+    number: "几百步后饱和 vs 15,000+ 步"
+    number_type: metric
+    mechanism: |
+      报告原句：ReAct 的设计"carries a paradigm-level ceiling"——循环变长、context
+      拥塞、探索分支互相污染、唯一的验证机制（self-reflection）每多一轮就退化一点，
+      "a ReAct agent saturates after a few hundred steps regardless of the
+      underlying model. Scaling parameters or context further does not lift this
+      ceiling; it sits below them." 我们的部署里 agent team 协调 150 个 sub-agent
+      跑 15,000+ 步，是单 agent 饱和点的两个数量级。
+    report_section: "§1 Introduction · §3.3 Agent-Level Scaling"
+    poster: "一条在几百步压平的曲线 vs 一条继续上升的曲线，标出两个数量级"
+    boundary: "这是我们对 ReAct 范式的判断与自己部署的数字，不是对某个具体产品的评测。"
+    audience: [engineer, pi]
+    form: mid_post
+
+  EDU_verification_must_be_external:
+    claim: "可靠的验证不只要多样，必须真正在外部——让推理的人自己回头检查，结构上就不成立。"
+    number: "3 个独立验证角色"
+    number_type: coordinate
+    mechanism: |
+      失效模式原句："a single trajectory commits early to a hypothesis and
+      rationalizes downstream from that commitment"；而"when the underlying
+      reasoner holds a systematic error, every parallel path inherits it"。
+      所以"Reliable verification must therefore be not merely diverse but
+      genuinely external"。落地是三个角色：conflict reviewer（调和两份矛盾报告）、
+      fact checker（对新证据独立核查单条主张，independent of the sub-agent that
+      produced it）、draft-report reviewer（查引用覆盖、claim–evidence 对齐、
+      逻辑一致）。verifier 不共享它审计的那条推理链。
+    report_section: "§3.1 Self-Verification"
+    poster: "三个验证角色各自盯什么失效模式的分工图"
+    boundary: "讲的是我们的设计选择，不是「所以我们不会出错」。"
+    audience: [pi, institution, engineer]
+    form: mid_post
+
+  EDU_conclusions_auditable:
+    claim: "异步不只是快——它让结论变得可审计、可撤回、可分叉。"
+    number: "3 个独立控制回路"
+    number_type: coordinate
+    mechanism: |
+      共享 report pool 让探索、验证、综合成为三个各自推进的独立控制回路。
+      原句："The report pool, recording every finding, every verdict, and every
+      user intervention, forms the causal backbone of the system. Conclusions
+      become auditable, retractable, and forkable. The team returns not only an
+      answer but a complete research history."
+    report_section: "§3.2 Asynchronous Coordination"
+    poster: "report pool 作为因果主干：finding / verdict / intervention 三类记录"
+    boundary: "auditable / retractable / forkable 是架构性质，不等于「我们的结论一定对」。"
+    audience: [pi, institution]
+    form: short_assertion
+
+  # ================= pseudo-correctness（对 PI 最有共鸣的一条） =================
+
+  EDU_pseudo_correctness:
+    claim: "一个用 try/except 把 bug 盖住的补丁，读起来比正确的修法更干净——所以「看起来更好」不能当判据。"
+    number: "3 条独立评分轴"
+    number_type: coordinate
+    mechanism: |
+      报告把这个失效模式命名为 pseudo-correctness：候选补丁能过可见测试、语义上读着
+      合理、agent 自己也声称成功，却没有因果性地修掉 bug。原句："a patch that masks
+      a bug with a try/except can read as cleaner than the correct fix, and an
+      agent that fabricates a success message can sound more confident than one
+      that actually ran a reproducer." 所以把问题从"which candidate looks better"
+      换成"which is most likely to have causally solved the task"，用三条独立评分轴
+      各探一种伪正确：Comprehension（是否识别了真问题而不是表面模式匹配）、
+      Causality（是否覆盖全输入分布而不只是可见切片）、Empirical Grounding
+      （正确性是否有可观察的执行证据而不只是被断言）。
+    report_section: "§4.2 Coding Verification via Causal-Evidence Comparison"
+    poster: "同一个 bug 的两个补丁并排：一个更干净但没修，一个更丑但修了"
+    boundary: |
+      这是 coding verification 的机制，不要外推成"我们能判断任何结论对不对"。
+    audience: [engineer, pi]
+    form: mid_post
+
+  # ================= 数据构造：难度校准 =================
+
+  EDU_calibrated_difficulty:
+    claim: "一道题只有在「至少一个模型做对、至少一个模型做错」时才留下——这样它才卡在能力前沿上。"
+    number: "至少 1 成功 + 至少 1 失败"
+    number_type: coordinate
+    mechanism: |
+      model-in-the-loop filtering：一个覆盖能力区间的模型面板跑同一道题，只有当
+      "at least one must fail (excluding trivia) and at least one must succeed
+      (excluding broken or ill-posed items)"时该题才被保留。过滤器评估的是完整的
+      reasoning–retrieval 管线，会拒掉那些"纯推理就能解"或"一次检索就能查到"的题。
+      合成方式是 3–10 步的 random walk，跨论文边界的多跳路径。
+    report_section: "§6.1 Deep Research Data"
+    poster: "难度筛选漏斗：太易（全对）/ 太难（全错）/ 留下（有分歧）"
+    boundary: "这是训练数据的构造方法，不是「我们的题比别人的好」。"
+    audience: [pi, engineer]
+    form: short_assertion
+
+  EDU_every_claim_traceable:
+    claim: "每一条原子主张都必须能追回一个可引用的出处，否则不进知识记忆。"
+    number: "1 个可引用出处 / 每条主张"
+    number_type: coordinate
+    mechanism: |
+      Evidence-grounded knowledge extraction：抽取限定在学术论文、技术报告与研究文献，
+      每个 (entity, statement) 对都保留原段落、文献出处、以及方法学或时间限定词。
+      原句："The resulting knowledge memory is smaller than a web-scale corpus but
+      substantially denser in citable, research-grade facts."
+    report_section: "§6.1 Deep Research Data"
+    poster: "一条主张 → 原段落 + 出处 + 限定词，三件缺一不进库"
+    boundary: "讲的是训练数据纪律，不是「我们不会幻觉」。"
+    audience: [pi, institution]
+    form: short_assertion
+
+  # ================= AgentOS =================
+
+  EDU_folder_not_patch:
+    claim: "加一个新应用应该是加一个文件夹，不是给内核打补丁。"
+    number: "5 个扩展点 / 1 个内核 / 十几个 workflow"
+    number_type: coordinate
+    mechanism: |
+      失效模式叫 runtime–workflow coupling：每个任务都把自己的循环、状态模型、权限规则、
+      追踪与终止逻辑塞进引擎，引擎就僵化成一堆任务专属分支。AgentOS 反过来：内核不知道
+      自己在跑什么任务，workflow 也不知道内核怎么执行它，中间只有一个刻意做小的
+      node context facade。五个扩展点（Tool / MCP server / Skill / Component /
+      Workflow）全在插件层，启动时自动发现。同一个 kernel binary 跑了十几个生产
+      workflow：deep research、coding、formal proof、heavy-duty reasoning。
+    report_section: "§5 AgentOS · Table 1"
+    poster: "五个扩展点表 + 一句「没有依赖从内核指向 workflow」"
+    boundary: "架构描述，不涉及性能声明。"
+    audience: [engineer]
+    form: mid_post
+
+  # ================= 内部 benchmark：自造坐标系（对应 RBE 那条路） =================
+
+  EDU_hard_deep_research_design:
+    claim: "我们自己那套题，答案形状是封闭的——所以能被程序确定性地打分，而不是让另一个模型来评。"
+    number: "41 道题 / 10 个领域"
+    number_type: coordinate
+    mechanism: |
+      Hard Deep Research：41 道由领域评审手写的题，每题答案是唯一实体、一个 top-k
+      排名、一个可枚举的多字段集合，或一条结构化推导（如地图路径）。评审锁定支撑证据、
+      导出 ground truth 并冻结成带版本与日期的参考答案；打分函数从模型回答里抽取
+      结构化主张与参考比对。部分题带 hard-negative：提到指定的错误项要扣分，
+      以此惩罚穷举猜测。
+    report_section: "§9.1 Dataset Composition · Figure 4"
+    poster: "10 个领域的题量分布 + 「答案形状封闭 → 可确定性打分」 的说明"
+    boundary: |
+      这是内部 benchmark 的设计，公布设计方法可以，**引用分数要谨慎**：
+      它是我们自己出的题，不能写成中立第三方评测。
+    audience: [pi, institution]
+    form: mid_post
+
+  EDU_hallucination_penalty:
+    claim: "会扣分的题才看得出区别：六个基线里四个报了错的药名，各被扣到 −4。"
+    number: "4/6 基线拿 −4，Apodex 三个配置全 4/4"
+    number_type: metric
+    mechanism: |
+      Case 1 是一道逆向检索题：从"品牌名里含 zy"、"申请公司名里含 tech"、
+      "某条未具名快速通道的首个获批药"这些间接线索，反推出唯一一个 2013 年生物制品
+      及其许可号与获批日期。rubric 对四个独立事实各 +1 / −1，所以自信但错的猜测被罚
+      到 −4，全对是 +4。答案是 Gazyva（obinutuzumab），BLA 125486，2013 年 11 月 1 日，
+      Genentech。GPT-5.4 报了 Zytiga（错），Qwen3.6-Plus 发明了"Zurnai"，
+      MiniMax-M2.7 与 GLM-5.1 什么都没给；只有 Claude-Opus-4.7 与 Gemini-3.1-Pro
+      也拿到 4/4。Apodex 三个配置全部 4/4。
+    report_section: "§9.3.1 Case 1 · Table 9 / Table 10"
+    poster: "四个字段 × 各模型的 ✓/✗ 矩阵，把 −4 那几行标红"
+    boundary: |
+      这是一道题上的表现，**不能写成"我们不幻觉"**。要写清是 rubric 设计
+      （错误答案倒扣）让区别显形，而不是我们宣称零幻觉。
+    audience: [pi, institution]
+    form: mid_post
+
+  EDU_over_claim_penalty:
+    claim: "同一道题，追求全覆盖的模型报了多达十五个名字——正确答案只有三个。"
+    number: "3 个正确答案 vs 最多 15 个名字；Claude-Opus-4.7 被扣 8 分"
+    number_type: metric
+    mechanism: |
+      Case 2 问"哪些诺贝尔文学奖得主曾被本国政府正式驱逐或流放"，严格判据是
+      formal government act（驱逐、放逐、剥夺国籍），恰好三人合格：索尔仁尼琴、
+      布罗茨基、阿斯图里亚斯。rubric 对每个正确项 +1、每个 over-claim −1。
+      追求高召回的基线把"事实上被迫流亡"与"正式驱逐"混为一谈，最多枚举到十五个名字：
+      Claude-Opus-4.7 被扣 8 分（Score −5.0），Gemini-3.1-Pro 被扣 5 分（−2.0）。
+      Apodex 三个配置都是 3 正确 0 over-claim，满分。
+    report_section: "§9.3.2 Case 2 · Table 11 / Table 12"
+    poster: "严格判据 vs 宽松理解：三个合格 vs 被误收的四类（聂鲁达、托马斯·曼…）"
+    boundary: |
+      同上：一道题的表现，不能外推成能力声明。可讲的是**定义边界如何决定答案集**，
+      这本身就是"定义漂移"这个母题的绝佳例子。
+    audience: [pi, institution]
+    form: mid_post
+
+  # ================= 能力保持（回应"专精会不会损伤通用"） =================
+
+  EDU_no_capability_trade:
+    claim: "把模型往深度研究上推，不必拿通用能力去换——同尺寸对照下每项都在一分以内。"
+    number: "≤1 分差距；HMMT Feb 25 反而 100.0 vs 94.8"
+    number_type: metric
+    mechanism: |
+      Apodex-1.0-mini 与 Qwen3.5-35B-A3B 在 AIME 2026、HMMT Feb 25、GPQA Diamond、
+      IFEval、IFBench、C-Eval、MMLU-Redux/Pro、SuperGPQA、LongBench v2、AA-LCR 上
+      逐项对照，差距大致在一分以内；Apodex-1.0 对 Qwen3.5-397B-A17B 在 HMMT Feb 25
+      上 100.0 vs 94.8，并在 C-Eval、MMLU-Pro、IFEval 领先，在 GPQA Diamond、
+      IFBench、SuperGPQA、LongBench v2 差几分。原句：post-training"preserves rather
+      than override"基座能力，"the post-training is additive on the deep-research
+      axis rather than a trade across axes"。
+    report_section: "§8.2 General Capabilities · Table 5"
+    poster: "同尺寸对照的雷达图或并列条形图，标出「差距 ≤1 分」"
+    boundary: |
+      这是 benchmark 层面的能力保持，不是"我们在所有方面都不弱"。
+      有几项是落后的（GPQA Diamond、IFBench、SuperGPQA、LongBench v2），
+      要按 Epoch 的做法**如实报双向**，不只报领先项。
+    audience: [pi, engineer]
+    form: mid_post
+
+  EDU_small_model_from_data:
+    claim: "4B 的模型在深度研究任务上打过了所有开源 30B 级——靠的是数据构造，不是尺寸。"
+    number: "4B: BrowseComp 48.8 / BrowseComp-ZH 63.5"
+    number_type: metric
+    mechanism: |
+      Smol 系列（0.8B / 2B / 4B）只用 Deep Research SFT 数据训练。Apodex-1.0-4B-SFT
+      在 BrowseComp 48.8、BrowseComp-ZH 63.5、DeepSearchQA 69.9，超过表 4 里全部
+      开源 30B 级模型（OpenSeeker-v2-30B-SFT 46.0 / 58.1、RedSearcher-30B 42.1 /
+      49.8、Tongyi-DeepResearch-30B 43.4 / 46.7）。原句："effective data
+      construction can substantially improve the research ability of compact models."
+    report_section: "§8.1 Apodex-1.0 Smol Series · Table 4"
+    poster: "参数量 × BrowseComp 分数散点，把 4B 那个点圈出来"
+    boundary: |
+      限定在这几个 deep-research benchmark 与这个尺寸对照，不是"小模型全面够用"。
+      4B 在 Humanity's Last Exam 上 32.9，低于 OpenSeeker-v2-30B-SFT 的 34.6 —— 如实报。
+    audience: [pi, engineer]
+    form: mid_post

@@ -12,8 +12,14 @@ schema_version: 1
 #   每个学科的混杂因素都已经被人写成 reporting standard / checklist / best-practice
 #   review 了。这活儿是检索已发表标准，不是自学材料学。
 #
-# 硬准入（五必填，缺一即拒）：
+# 硬准入（六必填，缺一即拒）：
 #   discipline / reported_metric / confound / control_or_report_item / standard_source
+#   / anchor_type
+#
+# anchor_type 三个取值：standard（规范，年份无风险）/ measurement（现实测量，有保鲜期，
+# 必须同时写 measured_window）/ case（一次已完成的调查，不得推广为当下普遍状态）。
+# 本表绝大多数是 standard——reporting standard 本身长期有效。两个例外：
+# 全固态电池 round-robin 是 case，量子优势 vs 经典基线是 measurement（经典算法在持续追赶）。
 #   这五个字段使 E1 无法退化成"复现性泛叙事"或"学术方法论文导读"
 #   （两者已被 docs/01-选题哲学.md 排除边界明文排除）。
 #
@@ -40,6 +46,7 @@ confounds:
 
   CF_life_sham_control:
     discipline: life_science
+    cell: apparatus_itself
     reported_metric: "干预后出现的表型或行为变化"
     confound: "手术 / 给药 / 操作流程本身改变了动物状态，而非被干预的靶点"
     control_or_report_item: "sham（假手术）对照组：走完全部相同流程但不施加关键干预；并显式描述控制混杂的策略"
@@ -49,6 +56,7 @@ confounds:
       year: 2020
       locator: "10.1371/journal.pbio.3000411；checklist 见 arriveguidelines.org"
       access: open
+    anchor_type: standard
     verification_status: needs_primary_check
     numbers_to_verify:
       - "ARRIVE Essential 10 中 confounders 条目的准确表述"
@@ -57,6 +65,7 @@ confounds:
 
   CF_life_blinding_effect_inflation:
     discipline: life_science
+    cell: measurement_artifact
     reported_metric: "effect size / 治疗效应量"
     confound: "非盲法的结局评估与缺失随机化，使效应量被系统性高估"
     control_or_report_item: "报告在分配、实验执行、结局评估、数据分析四个阶段各自谁知道分组（ARRIVE item 5）"
@@ -66,6 +75,7 @@ confounds:
       year: 2020
       locator: "10.1371/journal.pbio.3000411"
       access: open
+    anchor_type: standard
     verification_status: needs_primary_check
     numbers_to_verify:
       - "『缺乏随机化与盲法可致效应量膨胀 30–45%』——须核到 E&E 原文及其所引系统综述"
@@ -73,6 +83,7 @@ confounds:
 
   CF_life_offtarget_background:
     discipline: life_science
+    cell: batch_and_background
     reported_metric: "基因敲除 / 敲低后的表型"
     confound: "脱靶效应，或品系遗传背景差异，而非目标基因"
     control_or_report_item: "两条以上独立 gRNA 或独立敲低试剂给出一致表型；加回补（rescue）实验；报告品系与代数"
@@ -82,14 +93,76 @@ confounds:
       year: null
       locator: null
       access: null
+    anchor_type: standard
     verification_status: source_incomplete
     numbers_to_verify: []
     operator_fit: [OP1_constant_falsified]
+
+  CF_life_selection_flow:
+    discipline: life_science
+    cell: selection_effect
+    reported_metric: "组间差异或暴露-结局关联"
+    confound: "谁进了样本、谁被排除、谁中途失访——纳入与流失本身就能造出这个差异"
+    control_or_report_item: "报告各阶段人数与流失原因：合格、纳入、完成随访、进入分析各多少，为什么少的那些人少了；说明如何处理缺失数据"
+    standard_source:
+      title: "Strengthening the Reporting of Observational Studies in Epidemiology (STROBE): Explanation and Elaboration"
+      venue: "PLoS Medicine"
+      year: 2007
+      locator: "10.1371/journal.pmed.0040297"
+      citation: "Vandenbroucke JP, von Elm E, Altman DG, et al. PLoS Med. 2007;4(10):e297"
+      access: open
+    anchor_type: standard
+    verification_status: needs_primary_check
+    numbers_to_verify:
+      - "STROBE 22 条清单中与参与者流程、流失原因、缺失数据处理相关的条目编号与原文"
+      - "18 条通用 + 4 条按队列/病例对照/横断面分设的结构表述"
+    operator_fit: [OP8_primary_document_raid]
+
+  CF_life_prespecified_analysis:
+    discipline: life_science
+    cell: analytic_freedom
+    reported_metric: "主要终点上的显著结果"
+    confound: "终点、分析人群或统计模型是在看过数据之后定的，而不是事先定的"
+    control_or_report_item: "报告预设的主要与次要终点，以及试验开始后对终点的任何变更及其原因；说明预设的统计方法与亚组分析"
+    standard_source:
+      title: "CONSORT 2010 Statement: updated guidelines for reporting parallel group randomised trials"
+      venue: "BMJ"
+      year: 2010
+      locator: "10.1136/bmj.c332"
+      citation: "Schulz KF, Altman DG, Moher D. BMJ. 2010;340:c332"
+      access: open
+    anchor_type: standard
+    verification_status: needs_primary_check
+    numbers_to_verify:
+      - "CONSORT 2010 中关于终点预设与变更说明的条目编号（item 6a/6b）与原文"
+      - "统计方法与亚组/校正分析条目（item 12a/12b）的原文表述"
+    operator_fit: [OP1_constant_falsified, OP8_primary_document_raid]
+
+  CF_life_crossover_carryover:
+    discipline: life_science
+    cell: order_and_time
+    reported_metric: "同一批受试者在两种处理下的差异"
+    confound: "顺序与时间效应：前一阶段的处理仍在起作用（残留效应），或受试者本身随时间变化"
+    control_or_report_item: "报告分配到的处理顺序、洗脱期长度与依据，以及是否检验了残留效应；按阶段而非只按处理给出基线与结果"
+    standard_source:
+      title: "CONSORT 2010 statement: extension to randomised crossover trials"
+      venue: "BMJ"
+      year: 2019
+      locator: "10.1136/bmj.l4378"
+      citation: "Dwan K, Li T, Altman DG, Elbourne D. BMJ. 2019;366:l4378"
+      access: open
+    anchor_type: standard
+    verification_status: needs_primary_check
+    numbers_to_verify:
+      - "该扩展版中关于洗脱期与残留效应报告的条目编号与原文"
+      - "为交叉设计修改后的流程图与基线表要求的具体内容"
+    operator_fit: [OP8_primary_document_raid, OP1_constant_falsified]
 
   # ================= energy =================
 
   CF_energy_coincell_excess:
     discipline: energy
+    cell: surplus_resource
     reported_metric: "N 次循环后的容量保持率"
     confound: "纽扣电池的过量锂与泛滥电解液——而这两者恰是新电解质配方本该节省的对象"
     control_or_report_item: "与保持率曲线并列报告三个数：面容量（mAh cm-2）、N/P 比、电解液与容量比（g/Ah）"
@@ -99,6 +172,7 @@ confounds:
       year: 2019
       locator: "S2542-4351(19)30053-4"
       access: paywalled
+    anchor_type: standard
     verification_status: needs_primary_check
     numbers_to_verify:
       - "纽扣电池面容量约 1.0 mAh cm-2、锂负极 250 μm 以上、N/P ≥ 50"
@@ -109,6 +183,7 @@ confounds:
 
   CF_energy_assembly_variance:
     discipline: energy
+    cell: apparatus_itself
     reported_metric: "全固态电池循环性能"
     confound: "装配参数差异（成型压力、加压时长、In-to-Li 比），而非材料或界面设计"
     control_or_report_item: "报告 stack pressure 等装配参数全集，并以三重复（triplicate）报告数据"
@@ -118,6 +193,7 @@ confounds:
       year: 2024
       locator: "s41560-024-01634-3（开放 PDF：pure-oai.bham.ac.uk）；配套社论 The path to accurate reporting, s41560-024-01663-y"
       access: open
+    anchor_type: case
     verification_status: needs_primary_check
     numbers_to_verify:
       - "21 个研究组参与 round-robin"
@@ -128,17 +204,29 @@ confounds:
 
   CF_energy_rate_protocol:
     discipline: energy
+    cell: boundary_extrapolation
     reported_metric: "比容量 / 倍率性能"
     confound: "测试倍率过低，容量对测试协议高度敏感，高倍率下结论不成立"
     control_or_report_item: "报告 C-rate 全集并给出高倍率数据；填写期刊 battery checklist"
+    # 主锚只能有一个来源：此前 locator 里同时塞了 Joule 与 ACS 两份 checklist，
+    # 引证校验提取到 ACS 的 DOI 却比对 Joule 的期刊名，报错配。改用有 DOI、
+    # 可机器校验的那一份作主锚，Joule 那份降为 secondary_source。
     standard_source:
-      title: "Standardized Battery Reporting Guidelines（Battery Checklist）"
+      title: "An Experimental Checklist for Reporting Battery Performances"
+      venue: "ACS Energy Letters"
+      year: 2021
+      locator: "10.1021/acsenergylett.1c00870"
+      citation: "Sun Y-K. ACS Energy Lett. 2021;6(6):2187-2189"
+      access: paywalled
+    secondary_source:
+      title: "Standardized Battery Reporting Guidelines（Joule Battery Checklist）"
       venue: "Joule"
       year: 2021
-      locator: "S2542-4351(20)30625-5，Joule 2021, 5, 1–2, A. K. Stephan；另见 An Experimental Checklist for Reporting Battery Performances, ACS Energy Letters, 10.1021/acsenergylett.1c00870"
-      access: paywalled
+      locator: "S2542-4351(20)30625-5（Elsevier PII，无 DOI，无法机器校验）"
+    anchor_type: standard
     verification_status: needs_primary_check
     numbers_to_verify:
+      - "ACS checklist 中与 C-rate 全集报告相关的条目原文"
       - "Joule Battery Checklist 的确切标题、年份与提交时触发条件"
       - "低倍率与高倍率容量保持率的具体对照数字"
     operator_fit: [OP8_primary_document_raid]
@@ -147,6 +235,7 @@ confounds:
 
   CF_chem_tof_active_sites:
     discipline: chemistry
+    cell: normalization_basis
     reported_metric: "TOF / TON（转换频率、转换数）"
     confound: "表面活性位点数未知或归一化基准不同，使跨实验室数字不可比"
     control_or_report_item: "报告活性位点计数方法；明确 TON / TOR / TOF 三者用的是哪一个定义"
@@ -156,6 +245,7 @@ confounds:
       year: null
       locator: "10.1021/cs4005979"
       access: paywalled
+    anchor_type: standard
     verification_status: needs_primary_check
     numbers_to_verify:
       - "发表年份"
@@ -164,6 +254,7 @@ confounds:
 
   CF_chem_aqy_definition:
     discipline: chemistry
+    cell: definition_drift
     reported_metric: "表观量子产率（apparent quantum yield / efficiency）"
     confound: "分母取入射光子还是被吸收光子的定义分歧，导致跨实验室结果不可比"
     control_or_report_item: "报告光子通量测定方法与所用 QY 定义"
@@ -173,6 +264,7 @@ confounds:
       year: 2018
       locator: "10.3390/ma11101990"
       access: open
+    anchor_type: standard
     verification_status: needs_primary_check
     numbers_to_verify:
       - "『QY 常被错用为事件速率与反应器外壁入射光子之比』的原文表述"
@@ -180,23 +272,29 @@ confounds:
 
   CF_chem_mass_transport:
     discipline: chemistry
+    cell: apparatus_itself
     reported_metric: "反应速率或转化率提升"
     confound: "传质 / 传热限制改善，而非催化剂本征活性提升"
     control_or_report_item: "变搅拌速率与变粒径实验，证明数据落在动力学控制区"
     standard_source:
-      title: "待补：需锁定一份公开的多相催化 best-practice 指南（如 ACS Catalysis 或 Nature Catalysis 社论）"
-      venue: null
-      year: null
-      locator: null
-      access: null
-    verification_status: source_incomplete
-    numbers_to_verify: []
+      title: "Toward Benchmarking in Catalysis Science: Best Practices, Challenges, and Opportunities"
+      venue: "ACS Catalysis"
+      year: 2016
+      locator: "10.1021/acscatal.6b00183"
+      citation: "Bligaard T, Bullock RM, Campbell CT, et al. ACS Catal. 2016;6(4):2590-2602"
+      access: paywalled
+    anchor_type: standard
+    verification_status: needs_primary_check
+    numbers_to_verify:
+      - "该文要求速率与 TOF 测量『不受传质或传热限制污染』的原文表述"
+      - "变搅拌速率 / 变粒径作为动力学控制区判据是否由该文明确列为 best practice"
     operator_fit: [OP1_constant_falsified]
 
   # ================= materials =================
 
   CF_mat_2d_substrate_history:
     discipline: materials
+    cell: batch_and_background
     reported_metric: "二维材料的电学 / 光学 / 力学性质"
     confound: "衬底效应、转移工艺、环境暴露史、样品间差异"
     control_or_report_item: "报告衬底材料、转移流程、暴露史与样品数量"
@@ -206,6 +304,7 @@ confounds:
       year: 2024
       locator: "arXiv:2409.18994"
       access: open
+    anchor_type: standard
     verification_status: needs_primary_check
     numbers_to_verify:
       - "论文标题、作者、年份"
@@ -214,6 +313,7 @@ confounds:
 
   CF_mat_batch_impurity:
     discipline: materials
+    cell: batch_and_background
     reported_metric: "掺杂或改性带来的性能提升"
     confound: "原料批次杂质或痕量金属带来的催化 / 电化学活性"
     control_or_report_item: "独立批次重复；ICP-MS 等元素分析给出杂质上限"
@@ -223,12 +323,14 @@ confounds:
       year: null
       locator: null
       access: null
+    anchor_type: standard
     verification_status: source_incomplete
     numbers_to_verify: []
     operator_fit: [OP1_constant_falsified]
 
   CF_mat_normalization_basis:
     discipline: materials
+    cell: normalization_basis
     reported_metric: "归一化后的性能指标"
     confound: "归一化基准选择（按质量 / 按面积 / 按体积 / 按活性位点）改变结论排序"
     control_or_report_item: "同时报告多个归一化基准，并说明哪个对应目标应用"
@@ -238,6 +340,7 @@ confounds:
       year: 2018
       locator: "10.3390/ma11101990（归一化论证可跨领域引用，但引用时须说明原文语境为光催化）"
       access: open
+    anchor_type: standard
     verification_status: needs_primary_check
     numbers_to_verify:
       - "『按克催化剂归一化不反映结构-活性关系』的原文表述"
@@ -247,6 +350,7 @@ confounds:
 
   CF_phys_classical_baseline:
     discipline: physics
+    cell: unequal_baseline
     reported_metric: "量子优势 / beyond-classical 声明"
     confound: "对照的经典基线不是当前最强经典算法；张量网络等方法随后追上或反超"
     control_or_report_item: "对照当前最优经典模拟，并说明所用基准（如 Linear XEB）的可 spoof 性边界"
@@ -256,6 +360,8 @@ confounds:
       year: 2024
       locator: "arXiv:2405.00789；另见 Flatiron Institute 张量网络工作对 2025-03 D-Wave Advantage2 声明的重新基线"
       access: open
+    anchor_type: measurement
+    measured_window: "各次声明与其后经典反超的时点各异，必须逐案核到最新"
     verification_status: needs_primary_check
     numbers_to_verify:
       - "Linear XEB 硬度所依赖的猜想在 sublinear depth 已被反驳的准确表述"
@@ -264,6 +370,7 @@ confounds:
 
   CF_phys_background_subtraction:
     discipline: physics
+    cell: measurement_artifact
     reported_metric: "电阻降为零等相变观测量"
     confound: "背景扣除方法未披露，或所报电阻的确定方法与原始数据不对应"
     control_or_report_item: "公开原始数据与扣除流程，使第三方可从原始数据重算"
@@ -273,6 +380,7 @@ confounds:
       year: null
       locator: null
       access: null
+    anchor_type: standard
     verification_status: source_incomplete
     numbers_to_verify: []
     operator_fit: [OP8_primary_document_raid]
@@ -282,6 +390,7 @@ confounds:
 
   CF_phys_strain_inhomogeneity:
     discipline: physics
+    cell: measurement_artifact
     reported_metric: "新物态或新相的信号"
     confound: "样品应变、不均匀性或衬底效应产生的测量伪影"
     control_or_report_item: "空间分辨表征 + 多样品复现，报告样品间差异"
@@ -291,6 +400,7 @@ confounds:
       year: null
       locator: null
       access: null
+    anchor_type: standard
     verification_status: source_incomplete
     numbers_to_verify: []
     operator_fit: [OP1_constant_falsified]
@@ -299,6 +409,7 @@ confounds:
 
   CF_comp_data_leakage:
     discipline: computing
+    cell: information_leakage
     reported_metric: "模型在留出集上的性能"
     confound: "数据泄漏，共八类，从教科书级错误到开放研究问题"
     control_or_report_item: "填写 model info sheet，逐类排除八种泄漏"
@@ -308,6 +419,7 @@ confounds:
       year: 2023
       locator: "S2666-3899(23)00159-9；预印本 arXiv:2207.07048；作者 Sayash Kapoor, Arvind Narayanan"
       access: open
+    anchor_type: standard
     verification_status: needs_primary_check
     numbers_to_verify:
       - "17 个领域、294 篇论文受影响"
@@ -316,21 +428,27 @@ confounds:
 
   CF_comp_tuning_budget:
     discipline: computing
+    cell: unequal_baseline
     reported_metric: "新方法相对基线的提升"
     confound: "两侧超参搜索预算不对等——新方法调够了，基线没调"
     control_or_report_item: "报告双方各自的搜索预算、搜索空间与选择准则"
     standard_source:
-      title: "待补：需锁定一份公开的 ML 基线调参报告规范（NeurIPS reproducibility checklist 或同类）"
-      venue: null
-      year: null
-      locator: null
-      access: null
-    verification_status: source_incomplete
-    numbers_to_verify: []
+      title: "Improving Reproducibility in Machine Learning Research (A Report from the NeurIPS 2019 Reproducibility Program)"
+      venue: "Journal of Machine Learning Research"
+      year: 2021
+      locator: "https://www.jmlr.org/papers/v22/20-303.html"
+      citation: "Pineau J, Vincent-Lamarre P, Sinha K, et al. JMLR. 2021;22(164)"
+      access: open
+    anchor_type: standard
+    verification_status: needs_primary_check
+    numbers_to_verify:
+      - "ML Reproducibility Checklist 中与超参搜索预算 / 搜索空间 / 选择准则相关的条目原文"
+      - "checklist 自 2019 年起对 NeurIPS 投稿强制，以及被 ICML / ICLR / AAAI 采纳的表述"
     operator_fit: [OP4_measurement_collapse]
 
   CF_comp_benchmark_contamination:
     discipline: computing
+    cell: information_leakage
     reported_metric: "评测集分数"
     confound: "评测集与训练数据重叠（污染），分数不反映泛化"
     control_or_report_item: "报告去污染检查方法与命中率"
@@ -340,6 +458,7 @@ confounds:
       year: null
       locator: null
       access: null
+    anchor_type: standard
     verification_status: source_incomplete
     numbers_to_verify: []
     operator_fit: [OP4_measurement_collapse]
