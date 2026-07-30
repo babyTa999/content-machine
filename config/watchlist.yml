@@ -92,6 +92,40 @@ content_rules:
   vertical_peers: "不直接明示；可内涵暗含做对照；语气别太 harsh（不站队衰败、不硬蹭 launch）。"
   general: "接话只接与官网同构的重型问题、产品 design choice 或真实用户决策强相关的话题；benchmark、竞品 launch、泛 verification 不因叙事相似进入互动。官方号不加别人/不置顶别人。"
 
+# ========== 账号分层：哪个账号能碰哪一层（Selene 2026-07-30 定）==========
+# 为什么要这一层：「工程师聊实现细节走老板个人号，不走官号」这条规则以前只是注释，
+# 没有任何代码执行它，全靠人每天记得。官号 quote 错层级，掉的是段位不是那条的数据，
+# 而且不可撤回 —— 这是全表唯一能直接伤品牌的缺口。
+#
+# 分层只引用下面已有的名单，不重抄 handle：改名字只有一个地方要改。
+# 声明顺序即优先级，第一个认领某个 handle 的层级生效，所以 never 必须写在最前。
+#
+# 两条独立闸门，都过才允许官号出手：
+#   ① 层级 —— 这个账号官号能不能碰（本表 official_quote）
+#   ② 内容类型 —— 这一条官号能不能碰（代码里 _content_route：工程细节 / 招聘生活 /
+#      强情绪 rant 一律退给老板号；只有提问没有立场的也退）
+# 铁律：判不准就退老板个人号。默认值就是 founder，不是 official。
+interaction_tiers:
+  never_competitor:
+    from: [competitors]
+    # content_rules 已写明 big4「永不直接明示 @提及」、vertical_peers「不直接明示」。
+    # 这里连抓取都不做，省掉一批"抓了但不许用"的候选和一次误发的机会。
+    any_interaction: false
+    official_quote: false
+    note: "竞品官号：不抓、不 quote、不 reply"
+  L1_institution:
+    from: [institutions]
+    official_quote: true
+    note: "顶刊 / 顶级机构官号（Nature / Science / NIH / Broad / EMBL / Arc）—— 官号 quote 只涨段位"
+  L2_named_individual:
+    from: [watchlist]
+    official_quote: true
+    note: "手选个人号 30 人（T1 圈内大V / T2 research systems / T3 计算生物 / T4 AI4Science 创始人）"
+  L3_pool:
+    from: [interaction_pool]
+    official_quote: true
+    note: "互动池 124 人。层级放开，但内容类型闸门照卡 —— 段位事故出在内容类型上，不在这一层"
+
 # ========== 监听参数 ==========
 filter:
   window_hours: 48

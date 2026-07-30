@@ -683,6 +683,91 @@ def _stance_score(text: str) -> tuple[int, str]:
     return score, reason
 
 
+# 官号不该碰的内容类型。这不是"低质量"清单——这些帖子里有很多值得接话，只是
+# 该由老板个人号去接。官号 quote 一条工程实现细节帖，读者的结论是"这是个小公司
+# 工程师在运营自己的社媒"，掉的是段位，不是那一条的数据。
+_ENGINEERING_DETAIL = (
+    "pull request", "commit", "stack trace", "traceback", "pip install", "npm install",
+    "docker", "cuda", "vram", "segfault", "dependency hell", "my config", "one-liner",
+    "gist.github", "code snippet", "api key", "localhost", "regex", "merge conflict",
+    "type error", "null pointer", "rate limit error",
+)
+_CAREER_LIFE = (
+    "we're hiring", "we are hiring", "join our team", "my last day", "personal news",
+    "i'm excited to announce that i", "happy birthday", "congrats", "congratulations",
+    "rest in peace", "passed away", "my new role", "i'm joining",
+)
+# 强情绪 rant。"hype" 一词故意不收：认真的批评经常用它，收了会误伤真立场帖。
+_HOT_RANT = (
+    "grifter", "scam", "bullshit", "clown", "shame on", "disgusting", "pathetic",
+    "garbage", "lmao", "wtf", "trash", "snake oil",
+)
+
+
+def _content_route(text: str, stance: int) -> tuple[str, str]:
+    """Which of our accounts may touch this post: the official one, or the founder's.
+
+    Fails safe to `founder`. Getting this wrong in the official account's direction is
+    expensive and hard to undo; getting it wrong toward the founder costs one quote.
+    So `official` has to be earned: no disqualifying content type, and a real position
+    on the record — a bare question mark (stance 1) is good raw material for a person
+    and a risk for a brand.
+    """
+    low = (text or "").lower()
+    for label, markers in (
+        ("工程实现细节", _ENGINEERING_DETAIL),
+        ("招聘/职业/生活", _CAREER_LIFE),
+        ("强情绪 rant", _HOT_RANT),
+    ):
+        hit = next((marker for marker in markers if marker in low), "")
+        if hit:
+            return "founder", f"{label}（命中「{hit}」）：官号不碰，走老板个人号"
+    if stance < 2:
+        return "founder", f"立场分 {stance} 不足（只有提问、没有明确立场）：官号不主动 quote"
+    return "official", f"立场分 {stance}，内容类型无禁忌：官号可 quote"
+
+
+def _walk_handles(node: Any) -> list[str]:
+    """Pull every handle out of a watchlist branch, whatever shape it is.
+
+    watchlist.yml mixes three shapes: a flat list of strings (institutions), a dict of
+    lists of dicts (watchlist / interaction_pool), and a dict of dicts of lists
+    (competitors). Walking generically keeps the tier map from silently missing a
+    branch when a list is reshaped.
+    """
+    found: list[str] = []
+    if isinstance(node, str):
+        handle = node.strip().lstrip("@")
+        if handle:
+            found.append(handle)
+    elif isinstance(node, dict):
+        if node.get("handle"):
+            found.append(str(node["handle"]).strip().lstrip("@"))
+        else:
+            for value in node.values():
+                found.extend(_walk_handles(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(_walk_handles(item))
+    return found
+
+
+def interaction_tier_map(watch_cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """handle(lower) -> tier definition, built from the lists that already exist.
+
+    The tiers reference watchlist.yml's own sections rather than restating handles, so
+    there is one place to edit a name. Order matters: the first tier that claims a
+    handle wins, which is why `never` is declared first in config.
+    """
+    tiers = (watch_cfg.get("interaction_tiers") or {})
+    resolved: dict[str, dict[str, Any]] = {}
+    for tier_id, definition in tiers.items():
+        for section in (definition or {}).get("from") or []:
+            for handle in _walk_handles(watch_cfg.get(str(section))):
+                resolved.setdefault(handle.lower(), {"tier": tier_id, **(definition or {})})
+    return resolved
+
+
 def collect_x_interaction_pool(
     watch_cfg: dict[str, Any], now: dt.datetime, cfg: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -692,12 +777,22 @@ def collect_x_interaction_pool(
     promos (07-27: 48 candidates, 0 keep), while individual KOLs post positions,
     which is what a quote needs as raw material.
     """
+    tier_map = interaction_tier_map(watch_cfg)
     pool: list[tuple[str, str]] = []
+    blocked = 0
     for group, entries in (watch_cfg.get("interaction_pool") or {}).items():
         for entry in entries or []:
             handle = str((entry or {}).get("handle") or "").lstrip("@")
-            if handle:
-                pool.append((handle, str(group)))
+            if not handle:
+                continue
+            # 竞品官号在 content_rules 里是"永不直接明示 @提及"。连抓都不抓，
+            # 省掉一整条"抓了但不许用"的候选，也省掉误发的机会。
+            if not (tier_map.get(handle.lower(), {}) or {}).get("any_interaction", True):
+                blocked += 1
+                continue
+            pool.append((handle, str(group)))
+    if blocked:
+        print(f"  interaction pool -> {blocked} handle(s) 在禁止互动层，已剔除")
     if not pool:
         return []
     limit = int(cfg.get("posts_per_handle", 8))
@@ -727,16 +822,28 @@ def collect_x_interaction_pool(
                 min_engagement=0,
                 known_author=True,
             )
+            tier = tier_map.get(handle.lower(), {})
+            tier_id = str(tier.get("tier") or "L3_pool")
             for signal in signals:
-                score, reason = _stance_score(str(signal.get("text") or ""))
+                text = str(signal.get("text") or "")
+                score, reason = _stance_score(text)
                 if score < min_stance:
                     continue
+                route, route_reason = _content_route(text, score)
+                # 层级和内容类型是两条独立的闸门。层级决定这个账号官号能不能碰，
+                # 内容类型决定这一条官号能不能碰 —— 两者都过才是 official。
+                if route == "official" and not tier.get("official_quote", False):
+                    route = "founder"
+                    route_reason = f"{tier_id} 未开放官号主动 quote：走老板个人号"
                 signal["action_hints"] = ["x_reply", "x_quote"]
                 signal["context"] = {
                     **(signal.get("context") or {}),
                     "pool": "interaction",
                     "stance_score": score,
                     "stance_reason": reason,
+                    "account_tier": tier_id,
+                    "account_route": route,
+                    "account_route_reason": route_reason,
                 }
                 output.append(signal)
                 kept += 1

@@ -41,7 +41,10 @@ forms:
     status: active
     length_hint: "一句判断 + 一张图承载全部信息"
     max_per_report: 1
-    max_per_week: 3
+    # 成绩单/对比图是账号的"信用证"：发一次立信，1–2 个月一次足够，
+    # 高于这个频率就把信用证稀释成噪音（Selene 2026-07-30：「成绩单发过了，
+    # 咱们也不能老发吧」）。常态的能力证明主力是机制解释，不是分数。
+    max_per_month: 1
 
   long_post:
     name: "长帖"

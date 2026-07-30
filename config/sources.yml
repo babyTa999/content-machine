@@ -19,10 +19,15 @@ recall:
     paper_abstract_only: 1
     anonymous_opinion: 0
   max_enrichment_candidates: 32
+  # 互动候选的保底座位。原来它和关键词搜索同在 "x" 桶里抢预算，结果 124 人的
+  # 互动池一条 quote 都没出过。quote 不占原创写作产能，却是账号权重的唯一杠杆。
+  reserved_interaction: 3
   enrichment_budgets:
-    # evergreen 不在这里配额：常青条目是当期保底，在预算切分之前先入座。
+    # evergreen 与 interaction 不在这里配额：两者都在预算切分之前先入座。
     official_update: 10
     x: 8
+    # 保底 3 席在预算之前入座，这里再给 2 席上限 —— 互动最多 5 条/期。
+    interaction: 2
     decision_window: 6
     rss_news: 5
     community: 3

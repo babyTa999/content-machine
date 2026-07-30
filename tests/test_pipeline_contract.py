@@ -240,17 +240,186 @@ class ProductLedContractTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             score.normalize_evidence_decision(item, row, self.pillars)
 
-    def test_interaction_cannot_also_be_original(self) -> None:
-        item = candidate("cand_interaction", platform="x")
+    @staticmethod
+    def _interaction_row(**overrides: object) -> dict:
         row = {
             "candidate_id": "cand_interaction",
             "decision": "interaction",
             "primary_destination": "C1",
             "primary_action": "x_reply",
+            "stance_read": "作者认为同行评议从来不检查分析代码",
+            "verification_hook": "这正是独立验证角色缺位的那一环",
         }
-        normalized = score.normalize_evidence_decision(item, row, self.pillars)
+        row.update(overrides)
+        return row
+
+    def test_interaction_cannot_also_be_original(self) -> None:
+        item = candidate("cand_interaction", platform="x")
+        normalized = score.normalize_evidence_decision(
+            item, self._interaction_row(), self.pillars
+        )
         self.assertEqual(normalized["primary_destination"], "C8")
         self.assertEqual(normalized["primary_action"], "x_reply")
+
+    def test_interaction_must_read_the_post_and_hook_the_narrative(self) -> None:
+        """互动最容易退化成「Great point!」。这两个字段是强制想清楚，缺一即拒。"""
+        item = candidate("cand_interaction", platform="x")
+        for missing in ("stance_read", "verification_hook"):
+            with self.subTest(missing=missing):
+                with self.assertRaises(SystemExit):
+                    score.normalize_evidence_decision(
+                        item, self._interaction_row(**{missing: ""}), self.pillars
+                    )
+                with self.assertRaises(SystemExit):
+                    score.normalize_evidence_decision(
+                        item, self._interaction_row(**{missing: "好帖"}), self.pillars
+                    )
+
+    def test_judge_cannot_promote_a_founder_route_to_the_official_account(self) -> None:
+        """段位闸门必须是闸门：判官可以降级，绝不许升级，否则它只是一句建议。"""
+        item = candidate("cand_interaction", platform="x")
+        item["context"] = {
+            **(item.get("context") or {}),
+            "account_tier": "L3_pool",
+            "account_route": "founder",
+            "account_route_reason": "工程实现细节：官号不碰",
+        }
+        promoted = score.normalize_evidence_decision(
+            item, self._interaction_row(account_route="official"), self.pillars
+        )
+        self.assertEqual(promoted["account_route"], "founder")
+        self.assertIn("不许上调", promoted["route_downgrade_note"])
+
+        # 反向必须放行：采集期判 official，判官看出问题降成 founder，照准。
+        item["context"]["account_route"] = "official"
+        demoted = score.normalize_evidence_decision(
+            item, self._interaction_row(account_route="founder"), self.pillars
+        )
+        self.assertEqual(demoted["account_route"], "founder")
+
+    def test_interaction_without_any_route_defaults_to_the_founder(self) -> None:
+        """没有任何分流信息时默认必须是老板个人号——官号出手要被挣来，不能是兜底。"""
+        item = candidate("cand_interaction", platform="x")
+        item["context"] = {}
+        normalized = score.normalize_evidence_decision(
+            item, self._interaction_row(), self.pillars
+        )
+        self.assertEqual(normalized["account_route"], "founder")
+
+    def test_competitor_accounts_are_never_scraped_for_interaction(self) -> None:
+        """竞品官号在 content_rules 里是「永不直接明示」，分层要连抓都不抓。"""
+        watch = score.load_yaml(score.REPO / "config" / "watchlist.yml")
+        tiers = collect.interaction_tier_map(watch)
+        for handle in ("openai", "anthropicai", "perplexity_ai", "biomni"):
+            self.assertIn(handle, tiers, handle)
+            self.assertFalse(tiers[handle].get("any_interaction", True), handle)
+            self.assertFalse(tiers[handle].get("official_quote", True), handle)
+        # 顶刊与手选个人号必须仍然开放，否则 quote 供给会被这层直接掐死。
+        for handle in ("nature", "sciencemagazine", "karpathy"):
+            self.assertTrue(tiers[handle]["official_quote"], handle)
+
+    def test_content_type_routes_away_from_the_official_account(self) -> None:
+        """段位事故出在内容类型上，不在账号层级上——工程细节帖再好也不给官号。"""
+        for text, expected in (
+            ("The real question is who verifies the verifier. I think this is backwards.", "official"),
+            ("just fixed a merge conflict, pip install -U to get the patch", "founder"),
+            ("we're hiring a research engineer!", "founder"),
+            ("these people are grifters selling snake oil", "founder"),
+            ("Has anyone checked whether replication rates differ by field?", "founder"),
+        ):
+            with self.subTest(text=text[:32]):
+                stance, _ = collect._stance_score(text)
+                route, reason = collect._content_route(text, stance)
+                self.assertEqual(route, expected, reason)
+
+    def test_interaction_keeps_its_seats_under_a_keyword_flood(self) -> None:
+        """互动池 124 人 0 产出的真因：它和关键词搜索抢同一个预算桶。保底席必须挡住洪水。"""
+        import argparse
+
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            saved = score.STATE_DB
+            score.STATE_DB = directory / "state.sqlite"
+            try:
+                cands, decisions = [], []
+                for index in range(30):
+                    item = candidate(f"kw_{index}", platform="x")
+                    item["source_path"] = "x_keyword_search"
+                    item["priority_score"] = 99          # 关键词候选优先级远高于互动
+                    cands.append(item)
+                    decisions.append({
+                        "candidate_id": item["candidate_id"],
+                        "decision": "keep_for_enrichment",
+                        "primary_action": "original_post",
+                        "likely_column": "C1",
+                        "problem_shape_id": "PS10_missing_control",
+                        "thesis_id": "T2_independent_verification",
+                        "editorial_intent_id": "EI6_missing_control",
+                        "event_match_reason": "flood",
+                        "capability_backing": "technical_report",
+                        "reason": "flood",
+                    })
+                for index in range(4):
+                    item = candidate(f"ix_{index}", platform="x")
+                    item["source_path"] = "x_interaction_pool"
+                    item["priority_score"] = 1
+                    cands.append(item)
+                    decisions.append({
+                        "candidate_id": item["candidate_id"],
+                        "decision": "interaction_only",
+                        "primary_action": "x_quote",
+                        "reason": "stance",
+                    })
+                paths = {
+                    name: directory / f"{name}.json"
+                    for name in ("judged", "candidates", "out", "queue")
+                }
+                paths["judged"].write_text(
+                    json.dumps({"run_id": "t", "stage": "recall_decisions", "decisions": decisions})
+                )
+                paths["candidates"].write_text(json.dumps({"run_id": "t", "candidates": cands}))
+                score.validate_recall(argparse.Namespace(
+                    judged=str(paths["judged"]), candidates=str(paths["candidates"]),
+                    out=str(paths["out"]), queue_out=str(paths["queue"]),
+                ))
+                queue = json.loads(paths["queue"].read_text())
+                queued = queue["candidate_ids"]
+                self.assertEqual(len(queued), len(set(queued)), "入队出现重复行，重复会占掉名额")
+                interaction = [cid for cid in queued if cid.startswith("ix_")]
+                # 期望值写死，不从配置读：从配置读会让"把保底席清零"这个变异
+                # 同时把期望值也清零，测试就永远通不了错。
+                self.assertGreaterEqual(
+                    len(interaction), 3,
+                    f"30 条高优先级关键词候选淹掉了互动，只入队 {len(interaction)} 条",
+                )
+                audit = queue["source_audit"]["interaction"]
+                self.assertLessEqual(
+                    audit["queued"], audit["eligible"], "queued 不可能多于 eligible"
+                )
+            finally:
+                score.STATE_DB = saved
+
+    def test_scorecard_form_is_capped_by_the_month_not_the_week(self) -> None:
+        """成绩单是信用证：发一次立信，按月配额。周配额管不住「老发成绩单」。"""
+        forms = (score.load_yaml(score.REPO / "config" / "forms.yml") or {}).get("forms") or {}
+        self.assertEqual(forms["chart_post"].get("max_per_month"), 1)
+        with tempfile.TemporaryDirectory() as temp:
+            saved = score.STATE_DB
+            score.STATE_DB = Path(temp) / "state.sqlite"
+            try:
+                # 20 天前发过一条成绩单：跨出 7 天窗口，但仍在 30 天窗口内。
+                score.record_report_forms(
+                    "2026-07-10", [{"candidate_id": "old", "form": "chart_post", "axis": "AX4_who_checks"}]
+                )
+                usage = score.enforce_form_quota(
+                    [{"candidate_id": "new", "form": "chart_post"}], "2026-07-30"
+                )
+                row = usage["chart_post"]
+                self.assertEqual(row["month"], 2)
+                self.assertTrue(row["over"], "近 30 天两条成绩单必须被标出来")
+                self.assertTrue(any("每月上限" in note for note in row["over"]))
+            finally:
+                score.STATE_DB = saved
 
     def test_same_source_can_appear_only_once(self) -> None:
         first = candidate("cand_a")

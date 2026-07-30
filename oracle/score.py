@@ -594,6 +594,8 @@ INTERNAL_CODENAME_RE = re.compile(
 PROSE_FIELDS = (
     "source_says", "why_now", "why_apodex", "possible_angle",
     "inference_boundary", "secondary_note",
+    # 互动这两条会被直接抄进 quote 正文，泄了代号就是发出去
+    "stance_read", "verification_hook",
 )
 
 
@@ -672,15 +674,19 @@ def enforce_form_quota(rows: list[dict[str, Any]], day: str) -> dict[str, dict[s
             per_report[form_id] = per_report.get(form_id, 0) + 1
     connection = state_connection()
     try:
-        since = _days_ago(day, 7)
-        prior = {
-            str(record["form"]): int(record["total"])
-            for record in connection.execute(
-                "SELECT form, COUNT(*) AS total FROM report_forms "
-                "WHERE report_date >= ? AND report_date < ? GROUP BY form",
-                (since, day),
-            )
-        }
+
+        def prior_window(days: int) -> dict[str, int]:
+            return {
+                str(record["form"]): int(record["total"])
+                for record in connection.execute(
+                    "SELECT form, COUNT(*) AS total FROM report_forms "
+                    "WHERE report_date >= ? AND report_date < ? GROUP BY form",
+                    (_days_ago(day, days), day),
+                )
+            }
+
+        prior = prior_window(7)
+        prior_month = prior_window(30)
     finally:
         connection.close()
     usage: dict[str, dict[str, int]] = {}
@@ -688,12 +694,18 @@ def enforce_form_quota(rows: list[dict[str, Any]], day: str) -> dict[str, dict[s
         definition = forms.get(form_id) or {}
         report_cap = definition.get("max_per_report")
         week_cap = definition.get("max_per_week")
+        # 有些形态的节奏是按月的，不是按周。成绩单类（chart_post）是典型：
+        # 它是账号的"信用证"，发一次立信，发多了就把信用证稀释成噪音。
+        month_cap = definition.get("max_per_month")
         week_total = prior.get(form_id, 0) + count
+        month_total = prior_month.get(form_id, 0) + count
         over: list[str] = []
         if report_cap is not None and count > int(report_cap):
             over.append(f"本期 {count} 条超过每期上限 {report_cap}")
         if week_cap is not None and week_total > int(week_cap):
             over.append(f"近 7 天 {week_total} 条超过每周上限 {week_cap}")
+        if month_cap is not None and month_total > int(month_cap):
+            over.append(f"近 30 天 {month_total} 条超过每月上限 {month_cap}")
         if over:
             print(
                 f"WARN form quota {form_id}: {'; '.join(over)}（不阻断，请写稿时换形态）",
@@ -702,8 +714,10 @@ def enforce_form_quota(rows: list[dict[str, Any]], day: str) -> dict[str, dict[s
         usage[form_id] = {
             "report": count,
             "week": week_total,
+            "month": month_total,
             "report_cap": report_cap,
             "week_cap": week_cap,
+            "month_cap": month_cap,
             "over": over,
         }
     return usage
@@ -983,6 +997,10 @@ def validate_recall(args: argparse.Namespace) -> None:
         role = evidence_role(candidate, sources_cfg)
         if candidate.get("object_type") == "curated_cell":
             return "evergreen"
+        # 互动候选必须自己一个桶。原来它掉进 "x"（预算 8），和关键词搜索、会话图、
+        # 动态关注抢同一批名额 —— 结果 124 人的互动池一条 quote 都没发出去过。
+        if path == "x_interaction_pool":
+            return "interaction"
         if platform == "x":
             return "x"
         if platform == "reddit":
@@ -1008,8 +1026,30 @@ def validate_recall(args: argparse.Namespace) -> None:
         if source_bucket(candidates[row["candidate_id"]]) == "evergreen":
             selected.append(row)
             selected_set.add(row["candidate_id"])
+    # Interaction gets reserved seats for the same reason, and it needs them more: a
+    # quote costs no original writing but is the only lever on account weight, and it
+    # is the line that lost every seat to keyword search.
+    reserved_interaction = int(recall_cfg.get("reserved_interaction", 0))
+    if reserved_interaction > 0:
+        seated = 0
+        for row in eligible:
+            if seated >= reserved_interaction:
+                break
+            if row["candidate_id"] in selected_set:
+                continue
+            if source_bucket(candidates[row["candidate_id"]]) == "interaction":
+                selected.append(row)
+                selected_set.add(row["candidate_id"])
+                seated += 1
     for bucket, budget in budgets.items():
-        matches = [row for row in eligible if source_bucket(candidates[row["candidate_id"]]) == bucket]
+        # 必须排掉已入座的：常青和互动是在预算切分之前入座的，不去重就会被这里再塞一遍，
+        # 重复行占掉 max_enrichment_candidates 的名额，审计里表现为 queued > eligible。
+        matches = [
+            row
+            for row in eligible
+            if source_bucket(candidates[row["candidate_id"]]) == bucket
+            and row["candidate_id"] not in selected_set
+        ]
         for row in matches[: max(0, budget)]:
             selected.append(row)
             selected_set.add(row["candidate_id"])
@@ -1151,6 +1191,41 @@ def normalize_evidence_decision(
             raise SystemExit(
                 f"Evidence interaction requires one interaction action: {candidate['candidate_id']}"
             )
+        context = candidate.get("context") or {}
+        collected_route = str(context.get("account_route") or "")
+        judged_route = str(row.get("account_route") or "")
+        if judged_route not in {"official", "founder", ""}:
+            raise SystemExit(
+                f"Interaction account_route must be official or founder: {candidate['candidate_id']}"
+            )
+        # 采集期已经按层级 + 内容类型判了一次。判官可以把 official 降成 founder
+        # （它读到了词表看不出的东西），但绝不许把 founder 升成 official —— 否则
+        # 段位闸门就变成一句建议。与"线索源不得升级为原创"同一个形状。
+        route = judged_route or collected_route or "founder"
+        if collected_route == "founder" and route == "official":
+            route = "founder"
+            cleaned["route_downgrade_note"] = (
+                "判官想让官号出手，但采集期的层级/内容类型闸门已判为老板个人号——不许上调。"
+            )
+        cleaned["account_route"] = route
+        cleaned["account_tier"] = str(context.get("account_tier") or "未收录")
+        cleaned["account_route_reason"] = str(
+            context.get("account_route_reason") or "—"
+        )
+        # 互动是唯一不产出原创的动作，最容易退化成"Great point!"。这两个字段是
+        # 强制想清楚：对方到底在主张什么，以及这条怎么挂回我们唯一那条叙事（验证）。
+        # 折进现有第二轮判官，不新开第三道关。
+        for field, label in (
+            ("stance_read", "对方在主张什么"),
+            ("verification_hook", "这条怎么挂回验证叙事"),
+        ):
+            value = str(row.get(field) or "").strip()
+            if len(value) < 8:
+                raise SystemExit(
+                    f"Interaction requires {field}（{label}）: {candidate['candidate_id']}"
+                )
+            cleaned[field] = value
+        assert_no_internal_codenames(row, candidate["candidate_id"])
     else:
         cleaned["primary_destination"] = "watch"
         cleaned["primary_action"] = "watch"
@@ -1365,18 +1440,30 @@ def render_report(
         ]
         if not grouped:
             continue
-        lines.extend([f"## {title}", "", "| 来源 | 动作 | 可互动方向 | Apodex 观点 | 边界 | 状态 |", "|---|---|---|---|---|---|"])
+        # 用哪个账号发是第一列：这是唯一不可撤回的选择，读日报时不该需要往右滚才看到。
+        lines.extend([
+            f"## {title}", "",
+            "| 用哪个号 | 来源 | 动作 | 对方在主张什么 | 怎么挂回验证 | 边界 |",
+            "|---|---|---|---|---|---|",
+        ])
         for row in grouped:
             candidate = candidates[row["candidate_id"]]
+            route = str(row.get("account_route") or "founder")
+            label = "**官号**" if route == "official" else "老板个人号"
             lines.append(
                 "| " + " | ".join(
                     [
-                        _source(candidate), _cell(row["primary_action"]), _cell(row["possible_angle"]),
-                        _cell(row["why_apodex"]), _cell(row["inference_boundary"]), "Idea",
+                        label, _source(candidate), _cell(row["primary_action"]),
+                        _cell(row.get("stance_read")), _cell(row.get("verification_hook")),
+                        _cell(row["inference_boundary"]),
                     ]
                 ) + " |"
             )
-        lines.append("")
+        routed = [
+            f"{str(row.get('account_tier') or '未收录')}／{str(row.get('account_route_reason') or '—')}"
+            for row in grouped
+        ]
+        lines.extend(["", "分流依据：" + "；".join(dict.fromkeys(routed)), ""])
     # 观察 / 来源覆盖 / 终审淘汰三节不再进日报（2026-07-29）。
     # 它们回答的是"系统跑得怎么样"，不是"今天写什么"；数据仍在
     # .evidence-clean-*.json 里，跑完由 Claude 在对话里报。
