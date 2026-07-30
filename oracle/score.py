@@ -469,28 +469,54 @@ def prefilter(args: argparse.Namespace) -> None:
     print(f"prefilter -> recall {len(survivors)} / excluded {len(excluded)}; state {STATE_DB}")
 
 
-def decision_map(
+def decision_accounting(
     judged: dict[str, Any], expected_ids: set[str], allowed_states: set[str], stage: str
-) -> dict[str, dict[str, Any]]:
+) -> tuple[dict[str, dict[str, Any]], dict[str, list[str]]]:
+    """Index judge rows by candidate id and report what is wrong, without raising.
+
+    Returns (usable_decisions, problems). Rows whose state is not a legal decision are
+    left out of the usable set — keeping them would let a later gate treat garbage as
+    truth. Everything a repair pass could fix lands in `problems`.
+    """
     rows = judged.get("decisions")
     if not isinstance(rows, list):
         raise SystemExit(f"{stage} Judge JSON must contain decisions[]")
     output: dict[str, dict[str, Any]] = {}
     duplicates: list[str] = []
+    bad_state: list[str] = []
     for row in rows:
         if not isinstance(row, dict):
-            raise SystemExit(f"{stage} decision rows must be objects")
+            continue
         candidate_id = str(row.get("candidate_id") or "")
         if candidate_id in output:
             duplicates.append(candidate_id)
-        output[candidate_id] = row
         if row.get("decision") not in allowed_states:
-            raise SystemExit(f"{stage} invalid decision for {candidate_id}: {row.get('decision')}")
-    actual_ids = set(output)
-    missing, unknown = sorted(expected_ids - actual_ids), sorted(actual_ids - expected_ids)
-    if duplicates or missing or unknown:
+            bad_state.append(candidate_id)
+            continue
+        output[candidate_id] = row
+    actual = set(output)
+    return output, {
+        "missing": sorted(expected_ids - actual),
+        "unknown": sorted(actual - expected_ids),
+        "duplicate": sorted(set(duplicates)),
+        "bad_state": sorted(set(bad_state) - actual),
+    }
+
+
+def decision_map(
+    judged: dict[str, Any], expected_ids: set[str], allowed_states: set[str], stage: str
+) -> dict[str, dict[str, Any]]:
+    """Strict indexing: the final authority, fails closed on any accounting problem."""
+    output, problems = decision_accounting(judged, expected_ids, allowed_states, stage)
+    for candidate_id in problems["bad_state"]:
+        row = next(
+            (r for r in judged["decisions"] if str(r.get("candidate_id")) == candidate_id), {}
+        )
+        raise SystemExit(f"{stage} invalid decision for {candidate_id}: {row.get('decision')}")
+    if problems["duplicate"] or problems["missing"] or problems["unknown"]:
         raise SystemExit(
-            f"{stage} candidate accounting failed; duplicate={duplicates}, missing={missing}, unknown={unknown}"
+            f"{stage} candidate accounting failed; duplicate={problems['duplicate']}, "
+            f"missing={problems['missing']}, unknown={problems['unknown']}"
         )
     return output
 
@@ -864,13 +890,14 @@ def scrapable_columns(pillars: dict[str, Any]) -> set[str]:
 
 
 def recall_decisions_with_curated(
-    source: dict[str, Any], judged: dict[str, Any]
-) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
-    """Return (candidates_by_id, decisions_by_id) with curated cells spliced in.
+    source: dict[str, Any], judged: dict[str, Any], strict: bool = True
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], dict[str, list[str]]]:
+    """Return (candidates_by_id, decisions_by_id, problems) with curated cells spliced in.
 
     Curated cells skip Stage 1, so their library decision is injected here rather
     than judged. Shared by both validate-recall and scan-recall so the two can
-    never disagree on what the decision set is.
+    never disagree on what the decision set is. strict=False lets the scanner see
+    an incomplete judge output instead of dying on it.
     """
     candidates = {item["candidate_id"]: item for item in source.get("candidates") or []}
     curated = {
@@ -878,13 +905,18 @@ def recall_decisions_with_curated(
         for candidate_id, item in candidates.items()
         if item.get("object_type") == "curated_cell"
     }
-    decisions = decision_map(judged, set(candidates) - set(curated), RECALL_STATES, "Recall")
+    judgeable = set(candidates) - set(curated)
+    if strict:
+        decisions = decision_map(judged, judgeable, RECALL_STATES, "Recall")
+        problems: dict[str, list[str]] = {}
+    else:
+        decisions, problems = decision_accounting(judged, judgeable, RECALL_STATES, "Recall")
     for candidate_id, item in curated.items():
         decision = ((item.get("curated") or {}).get("decision")) or {}
         if not decision:
             raise SystemExit(f"Curated cell lacks a library decision: {candidate_id}")
         decisions[candidate_id] = {**decision, "candidate_id": candidate_id}
-    return candidates, decisions
+    return candidates, decisions, problems
 
 
 def normalize_recall_row(
@@ -944,7 +976,7 @@ def scan_recall(args: argparse.Namespace) -> None:
     """
     source = load_json(args.candidates)
     judged = load_json_loose(args.judged)
-    candidates, decisions = recall_decisions_with_curated(source, judged)
+    candidates, decisions, problems = recall_decisions_with_curated(source, judged, strict=False)
     pillars = load_yaml(REPO / "config" / "pillars.yml")
     valid_columns = scrapable_columns(pillars)
     illegal: list[dict[str, str]] = []
@@ -955,7 +987,15 @@ def scan_recall(args: argparse.Namespace) -> None:
             normalize_recall_row(candidates[candidate_id], row, pillars, valid_columns)
         except SystemExit as exc:
             illegal.append({"candidate_id": candidate_id, "reason": str(exc)})
-    payload = {"ok": not illegal, "illegal": illegal}
+    # 判官漏答和判错一样要重判。漏答的行在 decisions 里根本不存在，所以逐行扫描
+    # 永远看不见它 —— 这是 2026-07-30 那次 6 条漏答、修复循环一次没跑就整轮报废的原因。
+    for candidate_id in problems.get("missing") or []:
+        illegal.append({"candidate_id": candidate_id, "reason": "判官没有返回这条候选的决策（漏答）"})
+    for candidate_id in problems.get("bad_state") or []:
+        illegal.append({"candidate_id": candidate_id, "reason": "判官返回了非法 decision 状态"})
+    for candidate_id in problems.get("duplicate") or []:
+        illegal.append({"candidate_id": candidate_id, "reason": "判官对同一条候选返回了多行"})
+    payload = {"ok": not illegal, "illegal": illegal, "accounting": problems}
     if args.out:
         Path(args.out).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(payload, ensure_ascii=False))
@@ -969,16 +1009,23 @@ def splice_recall(args: argparse.Namespace) -> None:
         for row in load_json_loose(path).get("decisions") or []:
             patch_rows[str(row.get("candidate_id"))] = row
     merged = [patch_rows.get(str(r.get("candidate_id")), r) for r in base.get("decisions") or []]
+    # 漏答的候选在 base 里没有行，只做覆盖会把重判结果静默丢掉 —— 必须追加。
+    seen = {str(r.get("candidate_id")) for r in merged}
+    added = [row for candidate_id, row in patch_rows.items() if candidate_id not in seen]
+    merged.extend(added)
     applied = sum(1 for r in merged if str(r.get("candidate_id")) in patch_rows)
     out = {"stage": base.get("stage", "recall"), "decisions": merged}
     Path(args.out).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"spliced {applied} repaired row(s) over {len(merged)} decisions -> {args.out}")
+    print(
+        f"spliced {applied} repaired row(s) ({len(added)} newly added) "
+        f"over {len(merged)} decisions -> {args.out}"
+    )
 
 
 def validate_recall(args: argparse.Namespace) -> None:
     source = load_json(args.candidates)
     judged = load_json_loose(args.judged)
-    candidates, decisions = recall_decisions_with_curated(source, judged)
+    candidates, decisions, _ = recall_decisions_with_curated(source, judged)
     pillars = load_yaml(REPO / "config" / "pillars.yml")
     valid_columns = scrapable_columns(pillars)
     normalized: list[dict[str, Any]] = [
@@ -1480,7 +1527,9 @@ def scan_evidence(args: argparse.Namespace) -> None:
     source = load_json(args.candidates)
     judged = load_json_loose(args.judged)
     candidates = {item["candidate_id"]: item for item in source.get("candidates") or []}
-    decisions = decision_map(judged, set(candidates), EVIDENCE_STATES, "Evidence")
+    decisions, problems = decision_accounting(
+        judged, set(candidates), EVIDENCE_STATES, "Evidence"
+    )
     pillars = load_yaml(REPO / "config" / "pillars.yml")
     illegal: list[dict[str, str]] = []
     for candidate_id, row in decisions.items():
@@ -1488,7 +1537,13 @@ def scan_evidence(args: argparse.Namespace) -> None:
             normalize_evidence_decision(candidates[candidate_id], row, pillars)
         except SystemExit as exc:
             illegal.append({"candidate_id": candidate_id, "reason": str(exc)})
-    payload = {"ok": not illegal, "illegal": illegal}
+    for candidate_id in problems["missing"]:
+        illegal.append({"candidate_id": candidate_id, "reason": "判官没有返回这条候选的决策（漏答）"})
+    for candidate_id in problems["bad_state"]:
+        illegal.append({"candidate_id": candidate_id, "reason": "判官返回了非法 decision 状态"})
+    for candidate_id in problems["duplicate"]:
+        illegal.append({"candidate_id": candidate_id, "reason": "判官对同一条候选返回了多行"})
+    payload = {"ok": not illegal, "illegal": illegal, "accounting": problems}
     if args.out:
         Path(args.out).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(payload, ensure_ascii=False))

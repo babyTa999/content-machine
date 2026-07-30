@@ -421,6 +421,80 @@ class ProductLedContractTest(unittest.TestCase):
             finally:
                 score.STATE_DB = saved
 
+    def test_scanner_reports_unanswered_candidates_instead_of_dying(self) -> None:
+        """判官漏答必须是「可修复」，不是「整轮报废」。
+
+        复现 2026-07-30 实跑：60 条送判、判官只答 54 条。漏答的行在 decisions 里
+        根本不存在，所以逐行扫描永远看不见；而扫描器当时用的是会抛异常的严格点数检查，
+        于是修复循环第一步就死掉，一次都没跑成。
+        """
+        import argparse
+
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            answered = [candidate(f"evt_{i}") for i in range(4)]
+            unanswered = [candidate(f"evt_missing_{i}") for i in range(2)]
+            rows = [
+                {
+                    "candidate_id": item["candidate_id"],
+                    "decision": "keep_for_enrichment",
+                    "primary_action": "original_post",
+                    "likely_column": "C1",
+                    "problem_shape_id": "PS10_missing_control",
+                    "thesis_id": "T2_independent_verification",
+                    "editorial_intent_id": "EI6_missing_control",
+                    "event_match_reason": "ok",
+                    "capability_backing": "technical_report",
+                    "reason": "ok",
+                }
+                for item in answered
+            ]
+            paths = {n: directory / f"{n}.json" for n in ("judged", "candidates", "scan")}
+            paths["judged"].write_text(
+                json.dumps({"run_id": "t", "stage": "recall_decisions", "decisions": rows})
+            )
+            paths["candidates"].write_text(
+                json.dumps({"run_id": "t", "candidates": answered + unanswered})
+            )
+            # 关键：这一步以前会抛 SystemExit，修复循环因此永远拿不到 BAD_IDS
+            score.scan_recall(argparse.Namespace(
+                judged=str(paths["judged"]), candidates=str(paths["candidates"]),
+                out=str(paths["scan"]),
+            ))
+            scan = json.loads(paths["scan"].read_text())
+            self.assertFalse(scan["ok"])
+            flagged = {row["candidate_id"] for row in scan["illegal"]}
+            for item in unanswered:
+                self.assertIn(item["candidate_id"], flagged, "漏答的候选没有被标成可修复")
+            self.assertEqual(
+                set(scan["accounting"]["missing"]),
+                {item["candidate_id"] for item in unanswered},
+            )
+
+    def test_splice_appends_a_rejudged_row_that_had_no_base_row(self) -> None:
+        """漏答的候选在 base 里没有行，只做覆盖会把重判结果静默丢掉。"""
+        import argparse
+
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            base, patch, out = (directory / f"{n}.json" for n in ("base", "patch", "out"))
+            base.write_text(json.dumps({"stage": "recall", "decisions": [
+                {"candidate_id": "evt_kept", "decision": "watch_only"},
+            ]}))
+            patch.write_text(json.dumps({"decisions": [
+                {"candidate_id": "evt_kept", "decision": "reject"},
+                {"candidate_id": "evt_was_missing", "decision": "watch_only"},
+            ]}))
+            score.splice_recall(argparse.Namespace(
+                base=str(base), patch=[str(patch)], out=str(out)
+            ))
+            merged = {
+                row["candidate_id"]: row["decision"]
+                for row in json.loads(out.read_text())["decisions"]
+            }
+            self.assertEqual(merged["evt_kept"], "reject", "已有行应被覆盖")
+            self.assertEqual(merged["evt_was_missing"], "watch_only", "新行应被追加而不是丢弃")
+
     def test_same_source_can_appear_only_once(self) -> None:
         first = candidate("cand_a")
         second = candidate("cand_b")
