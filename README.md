@@ -35,7 +35,8 @@ stakes、冲突、更新和仍开放的决策窗口。外部来源不能因为�
 - C4 Worldview：Selene 供料的长期世界观，不由外部管线自动生成。
 - C5 Claim vs Record：当前暂停，避免回到 proof / benchmark。
 - C6 Social Proof：只接确认可公开的 demo、用户案例和内部物料。
-- C8 Engagement：唯一互动归宿，不与原创重复。
+- C8 Engagement：唯一互动归宿，不与原创重复。按账号分层 + 内容类型双闸门决定**用哪个号发**，
+  默认老板个人号，官号出手要挣来；判官只能降级不能升级。保底 3 席/期。见 docs/02。
 
 Proof / benchmark 当前暂停，包括 SOTA、leaderboard、模型横评、内部 benchmark、
 4B vs 30B、coding/math benchmark。

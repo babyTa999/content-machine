@@ -137,7 +137,8 @@ filter:
 # 依据：机构官号发论文推广做不了原创（07-27 实跑 48 条 0 keep），但个人 KOL 发的是
 # 观点与立场，是 quote 的原料。三判据见 内容/竞品brain.md §6.6：
 #   ① 主题跟验证母题同构 ② 立场上我们是帮忙的人不是被说的人 ③ 层级配得上官号
-# 工程师聊实现细节的那类走老板个人号，不走官号。
+# 工程师聊实现细节的那类走老板个人号，不走官号 —— 这条已于 2026-07-30 焊成闸门，
+# 见上面的 interaction_tiers 与 collect.py 的 _content_route，不再靠人记。
 interaction_pool:
   ai4science:                     # AI4Science 研究者（62 人）
     - handle: StefanoErmon
