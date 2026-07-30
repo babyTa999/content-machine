@@ -471,6 +471,81 @@ class ProductLedContractTest(unittest.TestCase):
                 {item["candidate_id"] for item in unanswered},
             )
 
+    def test_repair_chunk_is_built_from_the_scan_file_not_a_shell_variable(self) -> None:
+        """重判块必须真的装上候选。空块 = 修复循环空转，而且报告"成功"。"""
+        import argparse
+
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            items = [candidate(f"evt_{i}") for i in range(5)]
+            scan, cands, out = (directory / f"{n}.json" for n in ("scan", "cands", "out"))
+            cands.write_text(json.dumps({"run_id": "t", "candidates": items}))
+            scan.write_text(json.dumps({"ok": False, "illegal": [
+                {"candidate_id": "evt_1", "reason": "漏答"},
+                {"candidate_id": "evt_3", "reason": "判错"},
+            ]}))
+            score.build_repair_input(argparse.Namespace(
+                scan=str(scan), candidates=str(cands), out=str(out), stage="recall"
+            ))
+            chunk = json.loads(out.read_text())
+            self.assertEqual(
+                [c["candidate_id"] for c in chunk["candidates"]], ["evt_1", "evt_3"]
+            )
+
+    def test_repair_chunk_fails_loudly_when_no_scan_id_resolves(self) -> None:
+        """静默空转比崩溃更糟：跑还是失败，但报错的位置和原因全是错的。
+
+        这正是 zsh 不分词那个 bug 的形状——六个 id 拼成一个参数，一条也匹配不上，
+        修复块是空的，三轮重判什么都没做，然后 fail-closed 在下游报了个无关的错。
+        """
+        import argparse
+
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            scan, cands, out = (directory / f"{n}.json" for n in ("scan", "cands", "out"))
+            cands.write_text(json.dumps({"candidates": [candidate("evt_real")]}))
+            # 模拟分词失败：六个 id 变成一个巨型字符串
+            scan.write_text(json.dumps({"illegal": [
+                {"candidate_id": "evt_a evt_b evt_c", "reason": "漏答"},
+            ]}))
+            with self.assertRaises(SystemExit) as caught:
+                score.build_repair_input(argparse.Namespace(
+                    scan=str(scan), candidates=str(cands), out=str(out), stage="recall"
+                ))
+            self.assertIn("none", str(caught.exception))
+
+    def test_repair_chunk_is_empty_file_when_there_is_nothing_to_fix(self) -> None:
+        """没东西修时写 0 字节文件，好让调用方用 [ -s ] 判断，不必从 shell 变量解析列表。"""
+        import argparse
+
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            scan, cands, out = (directory / f"{n}.json" for n in ("scan", "cands", "out"))
+            cands.write_text(json.dumps({"candidates": [candidate("evt_a")]}))
+            scan.write_text(json.dumps({"ok": True, "illegal": []}))
+            score.build_repair_input(argparse.Namespace(
+                scan=str(scan), candidates=str(cands), out=str(out), stage="recall"
+            ))
+            self.assertEqual(out.stat().st_size, 0)
+
+    def test_runner_never_expands_an_id_list_through_the_shell(self) -> None:
+        """run_oracle.sh 是 zsh，zsh 默认不对未加引号的变量分词。
+
+        这个 bug 在纯 Python 测试里抓不到——它活在两个 subcommand 之间的 shell 胶水里。
+        所以这里直接检查脚本本身：候选 id 不许再经过 shell 变量传递。
+        """
+        script = (score.REPO / "run_oracle.sh").read_text()
+        # 只看可执行的行：解释这个 bug 的注释本身当然会提到它。
+        code = "\n".join(
+            line for line in script.splitlines() if not line.lstrip().startswith("#")
+        )
+        for banned in ("$BAD_IDS", "${BAD_IDS}"):
+            self.assertNotIn(
+                banned, code,
+                "候选 id 又走回 shell 变量了；zsh 不会分词，重判块会变空",
+            )
+        self.assertIn("build-repair-input", code, "重判块必须由 Python 从 scan 文件构建")
+
     def test_splice_appends_a_rejudged_row_that_had_no_base_row(self) -> None:
         """漏答的候选在 base 里没有行，只做覆盖会把重判结果静默丢掉。"""
         import argparse

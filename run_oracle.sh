@@ -101,21 +101,20 @@ SCAN="$HERE/vault/.recall-scan-$DATE.json"
 REPAIR_MAX=3
 for attempt in $(seq 1 $REPAIR_MAX); do
   "$PY" "$HERE/oracle/score.py" scan-recall "$RECALL_RAW" --candidates "$RECALL_INPUT" --out "$SCAN" >/dev/null
-  BAD_IDS=$("$PY" -c "import json,sys; print(' '.join(d['candidate_id'] for d in json.load(open(sys.argv[1]))['illegal']))" "$SCAN")
-  if [ -z "$BAD_IDS" ]; then
-    break
-  fi
-  echo "  repair attempt $attempt/$REPAIR_MAX: re-judging illegal rows -> $BAD_IDS"
   REPAIR_IN="$RECALL_CHUNKS/repair-input-$attempt.json"
   REPAIR_OUT="$RECALL_CHUNKS/repair-output-$attempt.json"
-  "$PY" - "$RECALL_INPUT" "$REPAIR_IN" $BAD_IDS <<'PYEOF'
-import json, sys
-src = json.load(open(sys.argv[1]))
-keep = set(sys.argv[3:])
-rows = [c for c in src.get("candidates") or [] if c["candidate_id"] in keep]
-json.dump({"schema_version": 4, "stage": "recall_input_chunk", "candidates": rows},
-          open(sys.argv[2], "w"), ensure_ascii=False, indent=2)
-PYEOF
+  # 候选 id 只在 Python 里流动，绝不经过 shell 变量。这个脚本是 zsh，而 zsh 默认
+  # 不对未加引号的变量做分词 —— 之前把 id 列表当 $BAD_IDS 展开，六个 id 变成一个
+  # 参数，keep 集合里装的是一个巨型字符串，没有候选匹配得上，修复输入永远是空的。
+  # 结果：这个循环从写下那天起从未真正重判过任何一行（2026-07-30 查出）。
+  if ! "$PY" "$HERE/oracle/score.py" build-repair-input \
+       --scan "$SCAN" --candidates "$RECALL_INPUT" --out "$REPAIR_IN" --stage recall; then
+    echo "build-repair-input failed; scan: $SCAN"
+    exit 1
+  fi
+  if [ ! -s "$REPAIR_IN" ]; then
+    break
+  fi
   judge_recall_chunk "$REPAIR_IN" "$REPAIR_OUT"
   "$PY" "$HERE/oracle/score.py" splice-recall --base "$RECALL_RAW" --patch "$REPAIR_OUT" --out "$RECALL_RAW"
 done
@@ -183,21 +182,17 @@ judge_evidence "$ENRICHED" "$EVIDENCE_RAW"
 ESCAN="$HERE/vault/.evidence-scan-$DATE.json"
 for attempt in $(seq 1 $REPAIR_MAX); do
   "$PY" "$HERE/oracle/score.py" scan-evidence "$EVIDENCE_RAW" --candidates "$ENRICHED" --out "$ESCAN" >/dev/null
-  BAD_IDS=$("$PY" -c "import json,sys; print(' '.join(d['candidate_id'] for d in json.load(open(sys.argv[1]))['illegal']))" "$ESCAN")
-  if [ -z "$BAD_IDS" ]; then
-    break
-  fi
-  echo "  evidence repair attempt $attempt/$REPAIR_MAX: re-judging illegal rows -> $BAD_IDS"
   EREPAIR_IN="$HERE/vault/.evidence-repair-input-$DATE-$attempt.json"
   EREPAIR_OUT="$HERE/vault/.evidence-repair-output-$DATE-$attempt.json"
-  "$PY" - "$ENRICHED" "$EREPAIR_IN" $BAD_IDS <<'PYEOF'
-import json, sys
-src = json.load(open(sys.argv[1]))
-keep = set(sys.argv[3:])
-rows = [c for c in src.get("candidates") or [] if c["candidate_id"] in keep]
-json.dump({**{k: v for k, v in src.items() if k != "candidates"}, "candidates": rows},
-          open(sys.argv[2], "w"), ensure_ascii=False, indent=2)
-PYEOF
+  # 同上：id 不过 shell。这条循环有过一模一样的 zsh 分词 bug。
+  if ! "$PY" "$HERE/oracle/score.py" build-repair-input \
+       --scan "$ESCAN" --candidates "$ENRICHED" --out "$EREPAIR_IN" --stage evidence; then
+    echo "build-repair-input failed; scan: $ESCAN"
+    exit 1
+  fi
+  if [ ! -s "$EREPAIR_IN" ]; then
+    break
+  fi
   judge_evidence "$EREPAIR_IN" "$EREPAIR_OUT"
   "$PY" "$HERE/oracle/score.py" splice-recall --base "$EVIDENCE_RAW" --patch "$EREPAIR_OUT" --out "$EVIDENCE_RAW"
 done

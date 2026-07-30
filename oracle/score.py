@@ -1001,6 +1001,44 @@ def scan_recall(args: argparse.Namespace) -> None:
     print(json.dumps(payload, ensure_ascii=False))
 
 
+def build_repair_input(args: argparse.Namespace) -> None:
+    """Build the re-judge chunk straight from a scan file. Ids never touch the shell.
+
+    Writes an empty file (size 0) when there is nothing to repair, so the caller can
+    test with `[ -s file ]` and never has to parse a list out of a shell variable.
+
+    The loud failure below is the point of this subcommand existing. Before it, the
+    caller expanded an id list through an unquoted shell variable — and run_oracle.sh
+    is zsh, which does not word-split those. Six ids arrived as one argument, nothing
+    matched, the repair chunk came out empty, and three attempts re-judged nothing
+    while reporting success. A repair that silently repairs nothing is worse than a
+    crash: the run still fails, but at the wrong place and with the wrong reason.
+    """
+    scan = load_json(args.scan)
+    wanted = [str(row.get("candidate_id")) for row in scan.get("illegal") or []]
+    out = Path(args.out)
+    if not wanted:
+        out.write_text("", encoding="utf-8")
+        print(f"nothing to repair -> {out.name}")
+        return
+    source = load_json(args.candidates)
+    by_id = {item["candidate_id"]: item for item in source.get("candidates") or []}
+    rows = [by_id[candidate_id] for candidate_id in wanted if candidate_id in by_id]
+    absent = sorted(set(wanted) - set(by_id))
+    if not rows:
+        raise SystemExit(
+            f"build-repair-input: scan lists {len(wanted)} candidate(s) to re-judge but none "
+            f"exist in {args.candidates}. Missing ids: {absent}"
+        )
+    if absent:
+        print(f"  warning: {len(absent)} scan id(s) absent from candidates: {absent}")
+    stage = "recall_input_chunk" if args.stage == "recall" else "enrichment_repair_chunk"
+    payload = {key: value for key, value in source.items() if key != "candidates"}
+    payload.update({"schema_version": 4, "stage": stage, "candidates": rows})
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"  repair chunk: {len(rows)} candidate(s) -> {out.name}")
+
+
 def splice_recall(args: argparse.Namespace) -> None:
     """Overlay re-judged rows onto a base recall file, keeping one row per candidate."""
     base = load_json_loose(args.base)
@@ -1616,6 +1654,11 @@ def build_parser() -> argparse.ArgumentParser:
     escanner.add_argument("judged")
     escanner.add_argument("--candidates", required=True)
     escanner.add_argument("--out")
+    builder = sub.add_parser("build-repair-input")
+    builder.add_argument("--scan", required=True)
+    builder.add_argument("--candidates", required=True)
+    builder.add_argument("--out", required=True)
+    builder.add_argument("--stage", choices=["recall", "evidence"], required=True)
     splicer = sub.add_parser("splice-recall")
     splicer.add_argument("--base", required=True)
     splicer.add_argument("--patch", nargs="+", required=True)
@@ -1633,6 +1676,7 @@ def main() -> None:
     commands = {
         "prefilter", "recall-chunks", "merge-recall", "validate-recall",
         "scan-recall", "scan-evidence", "splice-recall", "render",
+        "build-repair-input",
     }
     if argv and argv[0] not in commands and not argv[0].startswith("-"):
         argv.insert(0, "prefilter")
@@ -1649,6 +1693,8 @@ def main() -> None:
         scan_recall(args)
     elif args.command == "scan-evidence":
         scan_evidence(args)
+    elif args.command == "build-repair-input":
+        build_repair_input(args)
     elif args.command == "splice-recall":
         splice_recall(args)
     else:
