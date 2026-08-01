@@ -53,6 +53,14 @@ def load_json_loose(path: str | Path) -> dict[str, Any]:
     except json.JSONDecodeError:
         start, end = raw.find("{"), raw.rfind("}")
         if start < 0 or end <= start:
+            # 一个字节的 JSON 都没有，通常不是判官写坏了，而是它压根没跑起来——
+            # 额度用尽、未登录、限流。此时报 "not JSON" 会把人引去查 prompt 和解析器，
+            # 真正的原因就写在文件里（2026-07-30：org monthly spend limit）。
+            if raw and len(raw) < 600:
+                raise SystemExit(
+                    f"Judge did not run. It returned no JSON, only this message:\n"
+                    f"  {raw.strip()}\n  (file: {path})"
+                )
             raise SystemExit(f"Judge output is not JSON: {path}")
         try:
             value = json.loads(raw[start : end + 1])

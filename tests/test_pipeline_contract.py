@@ -471,6 +471,20 @@ class ProductLedContractTest(unittest.TestCase):
                 {item["candidate_id"] for item in unanswered},
             )
 
+    def test_a_judge_that_never_ran_says_so_instead_of_blaming_the_json(self) -> None:
+        """额度用尽 / 未登录时，报错要说真原因，别把人引去查 prompt 和解析器。"""
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "out.json"
+            path.write_text(
+                "You've hit your org's monthly spend limit · run /usage-credits "
+                "to ask your admin for a higher limit"
+            )
+            with self.assertRaises(SystemExit) as caught:
+                score.load_json_loose(path)
+            message = str(caught.exception)
+            self.assertIn("Judge did not run", message)
+            self.assertIn("monthly spend limit", message, "真正的原因必须原样带出来")
+
     def test_repair_chunk_is_built_from_the_scan_file_not_a_shell_variable(self) -> None:
         """重判块必须真的装上候选。空块 = 修复循环空转，而且报告"成功"。"""
         import argparse
